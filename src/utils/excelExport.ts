@@ -119,7 +119,7 @@ export function exportTradingPlanToExcel(
   // Sheet 1: Account Overview
   const overviewRows = [
     { "Account Parameter": "Account Owner (Gmail)", "Details": userEmail || "Anonymous Trader" },
-    { "Account Parameter": "Trading Plan Period", "Details": yearRange },
+    { "Account Parameter": "Trade Journal Period", "Details": yearRange },
     { "Account Parameter": "Export Date & Time", "Details": new Date().toLocaleString() },
     { "Account Parameter": "Annual Net PnL ($)", "Details": `$${totalPnL.toFixed(2)}` },
     { "Account Parameter": "Annual Net ROI (%)", "Details": `${totalRoi >= 0 ? "+" : ""}${totalRoi.toFixed(2)}%` },
@@ -146,7 +146,7 @@ export function exportTradingPlanToExcel(
   // Format clean filename
   const cleanGmail = (userEmail || "Trader").split("@")[0].replace(/[^a-zA-Z0-9]/g, "_");
   const cleanPeriod = yearRange.replace(/\s/g, "");
-  const filename = `SNGxCRYPTO_Trading_Plan_${cleanGmail}_${cleanPeriod}.xlsx`;
+  const filename = `SNGxCRYPTO_Trade_Journal_${cleanGmail}_${cleanPeriod}.xlsx`;
 
   // Trigger Excel file download
   XLSX.writeFile(workbook, filename);

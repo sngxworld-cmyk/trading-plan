@@ -395,7 +395,7 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
               SNGx<span className="text-indigo-500">CRYPTO</span> Pro Matrix
             </h1>
             <p className="text-sm text-slate-400 max-w-lg">
-              Enterprise 1-Year Strategic Optimization Infrastructure.
+              Enterprise Multi-Year Trade Journal Tracker Infrastructure.
             </p>
           </div>
 
@@ -467,7 +467,7 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
                 <TrendingUp className="w-4 h-4 text-emerald-400" />
               </div>
               <div>
-                <h4 className="text-xs font-bold text-slate-200">1-Year Plan Engine Active</h4>
+                <h4 className="text-xs font-bold text-slate-200">Trade Journal Engine Active</h4>
                 <p className="text-[11px] text-slate-400">Order block SMC strategy & PnL tracking</p>
               </div>
             </div>
@@ -483,7 +483,7 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
               </h2>
               <p className="text-xs text-slate-400">
                 {isRegisterMode
-                  ? "Enter your Gmail to request access to the 1-Year Plan"
+                  ? "Enter your Gmail to request access to Trade Journal Tracker"
                   : "Login with your Gmail or Username to access app"}
               </p>
             </div>

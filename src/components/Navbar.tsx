@@ -20,12 +20,12 @@ export const Navbar: React.FC<NavbarProps> = ({
     <nav className="h-16 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md flex items-center justify-between px-4 sm:px-8 shrink-0 z-30 sticky top-0">
       <div className="flex items-center gap-3">
         <div className="w-9 h-9 bg-indigo-600 rounded-lg flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-600/30">
-          TP
+          TJ
         </div>
         <div className="flex flex-col">
           <div className="flex items-center gap-2">
             <span className="text-base sm:text-lg font-bold tracking-tight text-slate-100">
-              TradePlan <span className="text-indigo-400 font-extrabold">Pro</span>
+              Trade Journal Tracker <span className="text-indigo-400 font-extrabold">Pro</span>
             </span>
             <span className="hidden sm:inline-block text-[10px] bg-slate-800 text-indigo-400 border border-slate-700 px-2 py-0.5 rounded font-mono">
               v2.4 CORE
@@ -40,30 +40,30 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="flex items-center gap-3 sm:gap-6">
         {/* Navigation Switcher between Client App & Host Admin Portal */}
         {user && (
-          <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800">
+          <div className="flex bg-slate-950 p-0.5 rounded-lg border border-slate-800">
             <button
               onClick={() => setActiveView("app")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
                 activeView === "app"
-                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
+                  ? "bg-indigo-600 text-white shadow-sm shadow-indigo-600/20"
                   : "text-slate-400 hover:text-slate-200"
               }`}
             >
               <LayoutDashboard className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Trading App</span>
+              <span>Trade Journal</span>
             </button>
 
             {user.role === "admin" && (
               <button
                 onClick={() => setActiveView("admin")}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
                   activeView === "admin"
-                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
+                    ? "bg-indigo-600 text-white shadow-sm shadow-indigo-600/20"
                     : "text-slate-400 hover:text-slate-200"
                 }`}
               >
                 <Settings className="w-3.5 h-3.5" />
-                <span>Host Admin Portal</span>
+                <span>Host Admin</span>
               </button>
             )}
           </div>

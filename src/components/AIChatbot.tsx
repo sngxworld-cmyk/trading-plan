@@ -178,7 +178,7 @@ export const AIChatbot: React.FC = () => {
               value={inputMsg}
               onChange={(e) => setInputMsg(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSend()}
-              placeholder="Ask about login, trading plan, or Sinhala help..."
+              placeholder="Ask about login, trade journal, or Sinhala help..."
               className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-sans"
             />
             <button

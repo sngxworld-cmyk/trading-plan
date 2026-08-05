@@ -373,7 +373,7 @@ export const HostAdminPortal: React.FC<HostAdminPortalProps> = ({
               Client Gmail Login & Access Control
             </h1>
             <p className="text-xs sm:text-sm text-slate-400 mt-1">
-              Grant or revoke Gmail access for clients registering on your 1-Year Strategic Trading Plan web app.
+              Grant or revoke Gmail access for clients registering on your Trade Journal Tracker web app.
             </p>
           </div>
 
@@ -453,7 +453,7 @@ export const HostAdminPortal: React.FC<HostAdminPortalProps> = ({
             <span className="text-2xl font-black text-emerald-400 font-mono mt-1 block">
               {stats.approvedUsers}
             </span>
-            <span className="text-[11px] text-emerald-300/80">Active trading plan access</span>
+            <span className="text-[11px] text-emerald-300/80">Active trade journal access</span>
           </div>
 
           <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-lg">
@@ -473,7 +473,7 @@ export const HostAdminPortal: React.FC<HostAdminPortalProps> = ({
             <KeyRound className="w-4 h-4 text-indigo-400" /> Pre-Grant Access to a Gmail Address
           </h2>
           <p className="text-xs text-slate-400 mb-4">
-            Type a client's Gmail address below to grant instant access. When this client signs up or logs in with this Gmail, they will bypass "Under Review" and get immediate trading plan & charts access!
+            Type a client's Gmail address below to grant instant access. When this client signs up or logs in with this Gmail, they will bypass "Under Review" and get immediate trade journal & charts access!
           </p>
 
           <form onSubmit={handlePreAddGmail} className="flex flex-col sm:flex-row gap-3">
@@ -613,7 +613,7 @@ export const HostAdminPortal: React.FC<HostAdminPortalProps> = ({
                             <button
                               onClick={() => handleInspectUserData(u.id)}
                               className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
-                              title="Inspect client's trading plan records"
+                              title="Inspect client's trade journal records"
                             >
                               <BarChart3 className="w-3.5 h-3.5 text-indigo-400" />
                             </button>
@@ -792,14 +792,14 @@ export const HostAdminPortal: React.FC<HostAdminPortalProps> = ({
         </div>
       )}
 
-      {/* INSPECT USER TRADING PLAN DATA MODAL */}
+      {/* INSPECT USER TRADE JOURNAL DATA MODAL */}
       {inspectUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md p-4 animate-in fade-in duration-150">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-2xl shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <BarChart3 className="w-4 h-4 text-emerald-400" /> Client Trading Plan Inspection
+                  <BarChart3 className="w-4 h-4 text-emerald-400" /> Client Trade Journal Inspection
                 </h3>
                 <p className="text-xs text-slate-400 font-mono">{inspectUser.email} (@{inspectUser.username})</p>
               </div>
@@ -827,7 +827,7 @@ export const HostAdminPortal: React.FC<HostAdminPortalProps> = ({
             </div>
 
             <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2">
-              <h4 className="text-xs font-bold text-amber-400 uppercase font-mono">Recorded Trading Plan Data (JSON)</h4>
+              <h4 className="text-xs font-bold text-amber-400 uppercase font-mono">Recorded Trade Journal Data (JSON)</h4>
               <pre className="text-[11px] font-mono text-slate-300 max-h-48 overflow-y-auto bg-slate-900 p-3 rounded-lg border border-slate-800/80">
                 {JSON.stringify(inspectUser.tradingData || {}, null, 2)}
               </pre>

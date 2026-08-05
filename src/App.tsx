@@ -80,7 +80,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"grid" | "summary" | "goal">("grid");
 
   // Trading Plan Metadata & State
-  const [yearRange, setYearRange] = useState("2026 - 2027");
+  const [yearRange, setYearRange] = useState("2026");
   const [startMonth, setStartMonth] = useState(0);
   const [selectedMonth, setSelectedMonth] = useState(0);
 
@@ -306,7 +306,7 @@ export default function App() {
               }),
             }).catch((e) => console.warn("Failed to sync imported data to server:", e));
           }
-          alert("Trading Plan data successfully imported and saved to your Gmail account!");
+          alert("Trade Journal data successfully imported and saved to your Gmail account!");
         }
       } catch (err) {
         alert("Failed to parse JSON file structure.");
@@ -510,7 +510,7 @@ export default function App() {
                 <TrendingUp className="w-3.5 h-3.5" /> SNGxCRYPTO Enterprise
               </div>
               <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-                1-YEAR METRIC PERFORMANCE TRACKER
+                TRADE JOURNAL METRIC PERFORMANCE TRACKER
               </h1>
               <p className="text-xs sm:text-sm text-slate-400 mt-1">
                 Manage risk exposure, track daily PnL, and analyze compound ROI trajectory.
@@ -521,7 +521,7 @@ export default function App() {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={handleExportData}
-                title="Export complete trading plan data to a formatted Excel workbook (.xlsx)"
+                title="Export complete trade journal data to a formatted Excel workbook (.xlsx)"
                 className="px-3.5 py-2 rounded-xl bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-emerald-500/10 active:scale-95"
               >
                 <FileSpreadsheet className="w-4 h-4 text-emerald-400" /> Export Excel Sheet
@@ -531,7 +531,7 @@ export default function App() {
                 onClick={handleResetData}
                 className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-rose-950 text-rose-400 border border-rose-900/50 text-xs font-bold transition-all flex items-center gap-1.5 shadow-md"
               >
-                <RotateCcw className="w-4 h-4" /> Reset Plan
+                <RotateCcw className="w-4 h-4" /> Reset Journal
               </button>
             </div>
           </div>
@@ -540,14 +540,31 @@ export default function App() {
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 mb-6 shadow-lg grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 font-mono">
-                Year Range:
+                Select Year:
               </label>
-              <input
-                type="text"
+              <select
                 value={yearRange}
-                onChange={(e) => handleSaveMeta(e.target.value, startMonth)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
-              />
+                onChange={(e) => {
+                  if (e.target.value === "CUSTOM") {
+                    const custom = prompt("Enter target year (e.g. 2028 or 2028 - 2029):", "2028");
+                    if (custom && custom.trim()) {
+                      handleSaveMeta(custom.trim(), startMonth);
+                    }
+                  } else {
+                    handleSaveMeta(e.target.value, startMonth);
+                  }
+                }}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white font-mono focus:outline-none focus:border-indigo-500 cursor-pointer"
+              >
+                {["2024", "2025", "2026", "2027", "2028", "2029", "2030", "2031", "2032", "2033", "2034", "2035"]
+                  .concat(yearRange && !["2024", "2025", "2026", "2027", "2028", "2029", "2030", "2031", "2032", "2033", "2034", "2035"].includes(yearRange) ? [yearRange] : [])
+                  .map((y) => (
+                    <option key={y} value={y}>
+                      Year {y}
+                    </option>
+                  ))}
+                <option value="CUSTOM">+ Add Custom Year / Range...</option>
+              </select>
             </div>
 
             <div>
@@ -886,7 +903,7 @@ export default function App() {
               {/* Cumulative Yearly Summary */}
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
                 <h3 className="text-xs font-bold text-amber-400 font-mono uppercase tracking-widest mb-4 border-l-2 border-amber-500 pl-2">
-                  Cumulative 12-Month Yearly Totals ({yearRange})
+                  Cumulative Yearly Totals ({yearRange})
                 </h3>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -993,7 +1010,7 @@ export default function App() {
                   TRADING GOALS & RULES
                 </h2>
                 <p className="text-xs text-slate-400 mt-1">
-                  1-Year Execution Framework & Risk Parameters
+                  Execution Framework & Risk Parameters
                 </p>
               </div>
 
@@ -1101,7 +1118,7 @@ export default function App() {
                     <ul className="space-y-2 text-xs sm:text-sm text-slate-200 font-medium">
                       <li className="flex items-center gap-2">
                         <div className="w-2 h-2 rounded-full bg-pink-400"></div>
-                        <span>Maintain discipline and stick to the plan at all times</span>
+                        <span>Maintain discipline and stick to the trade journal at all times</span>
                       </li>
                       <li className="flex items-center gap-2">
                         <div className="w-2 h-2 rounded-full bg-pink-400"></div>
@@ -1128,7 +1145,7 @@ export default function App() {
                       </li>
                       <li className="flex items-center gap-2">
                         <div className="w-2 h-2 rounded-full bg-indigo-400"></div>
-                        <span>Regularly review your trades to ensure you're following the plan</span>
+                        <span>Regularly review your trades to ensure you're following the trade journal</span>
                       </li>
                       <li className="flex items-center gap-2">
                         <div className="w-2 h-2 rounded-full bg-indigo-400"></div>

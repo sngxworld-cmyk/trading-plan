@@ -52,7 +52,7 @@ const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer }) => {
   const [activeTab, setActiveTab] = useState<"grid" | "summary" | "goal">("grid");
-  const [yearRange, setYearRange] = useState("2026 - 2027");
+  const [yearRange, setYearRange] = useState("2026");
   const [startMonth, setStartMonth] = useState<number>(0);
   const [selectedMonth, setSelectedMonth] = useState<number>(0);
 
@@ -224,16 +224,16 @@ export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer
       try {
         const parsed = JSON.parse(event.target?.result as string);
         setDataStore(parsed);
-        alert("Trading plan data successfully imported!");
+        alert("Trade journal data successfully imported!");
       } catch (err) {
-        alert("Failed to parse trading plan JSON file.");
+        alert("Failed to parse trade journal JSON file.");
       }
     };
     reader.readAsText(file);
   };
 
   const handleReset = () => {
-    if (confirm("Reset 1-Year Plan? All input history, win/loss ticks, and ROI metrics will be wiped out.")) {
+    if (confirm("Reset Trade Journal? All input history, win/loss ticks, and ROI metrics will be wiped out.")) {
       setDataStore({});
       localStorage.removeItem(`trading_store_${user.email}`);
     }
@@ -247,11 +247,11 @@ export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer
           <div className="flex items-center gap-2 mb-1">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
             <span className="text-xs font-bold uppercase font-mono tracking-wider text-emerald-400">
-              1-Year Strategic Optimization Terminal
+              Multi-Year Strategic Trade Journal Terminal
             </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white">
-            1-YEAR METRIC PERFORMANCE TRACKER
+            TRADE JOURNAL METRIC PERFORMANCE TRACKER
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
             Client: <span className="text-indigo-400 font-mono font-semibold">{user.email}</span> | Mode: SMC / Order Block Strategy
@@ -262,7 +262,7 @@ export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={handleExport}
-            title="Export complete trading plan data to a formatted Excel workbook (.xlsx)"
+            title="Export complete trade journal data to a formatted Excel workbook (.xlsx)"
             className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-500/40 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-md shadow-emerald-500/10 active:scale-95"
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" /> Export Excel Sheet
@@ -272,7 +272,7 @@ export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer
             onClick={handleReset}
             className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all"
           >
-            <RotateCcw className="w-3.5 h-3.5" /> Reset Plan
+            <RotateCcw className="w-3.5 h-3.5" /> Reset Journal
           </button>
         </div>
       </div>
@@ -281,16 +281,33 @@ export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer
       <div className="bg-slate-900 border border-slate-800 p-4 sm:p-5 rounded-2xl shadow-xl grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
           <label className="block text-[10px] uppercase font-mono font-bold text-slate-400 mb-1">
-            Year Range
+            Select Year
           </label>
           <div className="relative">
-            <Calendar className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-3" />
-            <input
-              type="text"
+            <Calendar className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-3 pointer-events-none z-10" />
+            <select
               value={yearRange}
-              onChange={(e) => setYearRange(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs font-mono text-slate-100 focus:outline-none focus:border-indigo-500"
-            />
+              onChange={(e) => {
+                if (e.target.value === "CUSTOM") {
+                  const custom = prompt("Enter target year (e.g. 2028 or 2028 - 2029):", "2028");
+                  if (custom && custom.trim()) {
+                    setYearRange(custom.trim());
+                  }
+                } else {
+                  setYearRange(e.target.value);
+                }
+              }}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs font-mono text-slate-100 focus:outline-none focus:border-indigo-500 cursor-pointer"
+            >
+              {["2024", "2025", "2026", "2027", "2028", "2029", "2030", "2031", "2032", "2033", "2034", "2035"]
+                .concat(yearRange && !["2024", "2025", "2026", "2027", "2028", "2029", "2030", "2031", "2032", "2033", "2034", "2035"].includes(yearRange) ? [yearRange] : [])
+                .map((y) => (
+                  <option key={y} value={y}>
+                    Year {y}
+                  </option>
+                ))}
+              <option value="CUSTOM">+ Add Custom Year / Range...</option>
+            </select>
           </div>
         </div>
 
@@ -668,7 +685,7 @@ export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer
             <h2 className="text-2xl font-black tracking-wider text-white uppercase font-mono">
               TRADING GOALS & STRATEGY MATRIX
             </h2>
-            <p className="text-xs text-slate-400">Rules & Parameters for 1-Year Portfolio Growth</p>
+            <p className="text-xs text-slate-400">Rules & Parameters for Portfolio Growth</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -738,7 +755,7 @@ export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer
                 <ul className="text-xs text-slate-300 space-y-2 font-mono">
                   <li className="flex items-center gap-2">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                    Maintain discipline and strictly stick to the trading plan
+                    Maintain discipline and strictly stick to the trading journal
                   </li>
                   <li className="flex items-center gap-2">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
