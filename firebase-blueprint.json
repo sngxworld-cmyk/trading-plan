@@ -1,0 +1,39 @@
+{
+  "entities": {
+    "users": {
+      "title": "users",
+      "description": "Registered client accounts and admin access status",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "username": { "type": "string" },
+        "role": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "lastLogin": { "type": "string" }
+      },
+      "required": ["email", "username", "role", "status"]
+    },
+    "preApprovedEmails": {
+      "title": "preApprovedEmails",
+      "description": "Pre-granted Gmail addresses by host admin",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "addedAt": { "type": "string" }
+      },
+      "required": ["email"]
+    },
+    "logs": {
+      "title": "logs",
+      "description": "Audit log stream for admin and user access events",
+      "type": "object",
+      "properties": {
+        "timestamp": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string" }
+      },
+      "required": ["timestamp", "message"]
+    }
+  }
+}
