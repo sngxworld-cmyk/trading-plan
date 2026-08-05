@@ -10,7 +10,9 @@
         "role": { "type": "string" },
         "status": { "type": "string" },
         "createdAt": { "type": "string" },
-        "lastLogin": { "type": "string" }
+        "lastLogin": { "type": "string" },
+        "yearRange": { "type": "string" },
+        "startMonth": { "type": "number" }
       },
       "required": ["email", "username", "role", "status"]
     },
@@ -34,6 +36,12 @@
         "type": { "type": "string" }
       },
       "required": ["timestamp", "message"]
+    }
+  },
+  "firestore": {
+    "/users/{userEmail}": {
+      "schema": "users",
+      "description": "User profile and trading plan records"
     }
   }
 }

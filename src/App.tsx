@@ -5,6 +5,7 @@ import {
   AppMetadata,
   DayRecord,
 } from "./types";
+import { getUserDataFromFirestore, saveUserDataToFirestore, subscribeUserDataFromFirestore } from "./lib/userStore";
 import { Navbar } from "./components/Navbar";
 import { GatewayScreen } from "./components/GatewayScreen";
 import { UnderReviewModal } from "./components/UnderReviewModal";
@@ -110,20 +111,31 @@ export default function App() {
     sessionStorage.removeItem("tradeplan_active_user");
   }, []);
 
-  // Fetch user trading data & metadata from server whenever user logs in with their Gmail
+  // Fetch & Subscribe to user trading data & metadata from Firestore & server whenever user logs in with their Gmail
   useEffect(() => {
     if (!currentUser?.email) return;
 
+    // 1. Fetch initial from Firestore
+    getUserDataFromFirestore(currentUser.email).then((fsData) => {
+      if (fsData?.tradingData && Object.keys(fsData.tradingData).length > 0) {
+        setTradingData(fsData.tradingData);
+      }
+      if (fsData?.yearRange) setYearRange(fsData.yearRange);
+      if (fsData?.startMonth !== undefined) {
+        setStartMonth(fsData.startMonth);
+        setSelectedMonth(fsData.startMonth);
+      }
+    });
+
+    // 2. Fetch initial from server
     const fetchUserData = async () => {
       try {
         const res = await fetch(`/api/user/data/${encodeURIComponent(currentUser.email)}`);
         const isJson = res.headers.get("content-type")?.includes("application/json");
         if (res.ok && isJson) {
           const data = await res.json();
-          if (data.tradingData) {
-            setTradingData(data.tradingData);
-          } else {
-            setTradingData({});
+          if (data.tradingData && Object.keys(data.tradingData).length > 0) {
+            setTradingData((prev) => (Object.keys(prev).length === 0 ? data.tradingData : prev));
           }
           if (data.metadata) {
             if (data.metadata.yearRange) setYearRange(data.metadata.yearRange);
@@ -139,6 +151,17 @@ export default function App() {
     };
 
     fetchUserData();
+
+    // 3. Subscribe to real-time Firestore changes for user Gmail
+    const unsubscribe = subscribeUserDataFromFirestore(currentUser.email, (data) => {
+      if (data?.tradingData && Object.keys(data.tradingData).length > 0) {
+        setTradingData(data.tradingData);
+      }
+      if (data?.yearRange) setYearRange(data.yearRange);
+      if (data?.startMonth !== undefined) setStartMonth(data.startMonth);
+    });
+
+    return () => unsubscribe();
   }, [currentUser?.email]);
 
   // Save metadata
@@ -147,6 +170,11 @@ export default function App() {
     setStartMonth(newStartM);
 
     if (currentUser?.email) {
+      saveUserDataToFirestore(currentUser.email, tradingData, {
+        yearRange: newRange,
+        startMonth: newStartM,
+      });
+
       fetch("/api/user/data", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -203,7 +231,10 @@ export default function App() {
         ...updates,
       };
 
-      // Persist to server keyed under Gmail
+      // Persist directly to Firestore under user Gmail
+      saveUserDataToFirestore(currentUser.email, nextStore, { yearRange, startMonth });
+
+      // Persist to server as backup
       fetch("/api/user/data", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

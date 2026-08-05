@@ -5,6 +5,7 @@ import {
   DayRecord,
   MonthData,
 } from "../types";
+import { saveUserDataToFirestore, subscribeUserDataFromFirestore } from "../lib/userStore";
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } from "chart.js";
 import { Line } from "react-chartjs-2";
 import { exportTradingPlanToExcel } from "../utils/excelExport";
@@ -58,11 +59,12 @@ export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer
 
   // Trading Data Store
   const [dataStore, setDataStore] = useState<TradingDataStore>(() => {
-    if (user.tradingData) return user.tradingData;
+    if (user.tradingData && Object.keys(user.tradingData).length > 0) return user.tradingData;
     const local = localStorage.getItem(`trading_store_${user.email}`);
     if (local) {
       try {
-        return JSON.parse(local);
+        const parsed = JSON.parse(local);
+        if (Object.keys(parsed).length > 0) return parsed;
       } catch (e) {}
     }
     return {};
@@ -70,12 +72,60 @@ export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer
 
   const [activePopupDay, setActivePopupDay] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isInitialMount = useRef(true);
 
-  // Auto save data
+  // Sync prop changes into dataStore
   useEffect(() => {
-    localStorage.setItem(`trading_store_${user.email}`, JSON.stringify(dataStore));
+    if (user.tradingData && Object.keys(user.tradingData).length > 0) {
+      setDataStore((prev) => {
+        if (!prev || Object.keys(prev).length === 0) return user.tradingData!;
+        return { ...user.tradingData, ...prev };
+      });
+    }
+  }, [user.tradingData, user.email]);
+
+  // Subscribe to real-time Firestore data for user's Gmail
+  useEffect(() => {
+    if (!user?.email) return;
+
+    const unsubscribe = subscribeUserDataFromFirestore(user.email, (data) => {
+      if (data?.tradingData && Object.keys(data.tradingData).length > 0) {
+        setDataStore((prev) => {
+          if (JSON.stringify(prev) !== JSON.stringify(data.tradingData)) {
+            return data.tradingData;
+          }
+          return prev;
+        });
+      }
+      if (data?.yearRange) setYearRange(data.yearRange);
+      if (data?.startMonth !== undefined) {
+        setStartMonth(data.startMonth);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [user.email]);
+
+  // Auto save data under user's Gmail (Firestore + localStorage + server API)
+  useEffect(() => {
+    if (!user?.email) return;
+
+    // Skip saving on initial mount if store is completely empty to prevent wiping server data
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      if (Object.keys(dataStore).length === 0) return;
+    }
+
+    try {
+      localStorage.setItem(`trading_store_${user.email}`, JSON.stringify(dataStore));
+    } catch (e) {}
+
+    // Save directly to Firestore under user Gmail
+    saveUserDataToFirestore(user.email, dataStore, { yearRange, startMonth });
+
+    // Backup to server API
     onSaveDataToServer(dataStore);
-  }, [dataStore]);
+  }, [dataStore, user.email, yearRange, startMonth]);
 
   // Ensure store exists for current year range
   const ensureRangeStore = (store: TradingDataStore, range: string) => {

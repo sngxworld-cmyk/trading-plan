@@ -661,8 +661,16 @@ async function startServer() {
       return res.status(404).json({ error: "User not found." });
     }
 
-    if (tradingData !== undefined) {
-      user.tradingData = tradingData;
+    if (tradingData !== undefined && typeof tradingData === "object") {
+      const isEmptyNew = Object.keys(tradingData).length === 0;
+      const hasExisting = user.tradingData && Object.keys(user.tradingData).length > 0;
+      if (isEmptyNew && hasExisting && !req.body.force) {
+        // Retain existing data instead of wiping with empty object
+      } else {
+        user.tradingData = req.body.merge
+          ? { ...user.tradingData, ...tradingData }
+          : tradingData;
+      }
     }
     if (metadata) {
       if (metadata.yearRange) user.yearRange = metadata.yearRange;
