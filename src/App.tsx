@@ -219,22 +219,43 @@ export default function App() {
     });
   };
 
-  // Refresh review status from server
+  // Refresh review status from local state & server
   const handleRefreshStatus = async () => {
     if (!currentUser) return;
+    const cleanEmail = currentUser.email.trim().toLowerCase();
+
+    // Check localStorage first
+    const localUsers: any[] = JSON.parse(localStorage.getItem("sngx_local_users") || "[]");
+    const matchedLocal = localUsers.find((u) => u.email && u.email.trim().toLowerCase() === cleanEmail);
+
+    let newStatus = matchedLocal?.status;
+    let newRole = matchedLocal?.role;
+
+    // Check pre-approved whitelist
+    const preApprovedList: string[] = JSON.parse(localStorage.getItem("sngx_preapproved_emails") || "[]");
+    if (cleanEmail === "sngxworld@gmail.com" || preApprovedList.some((e: string) => e.toLowerCase() === cleanEmail)) {
+      newStatus = "approved";
+    }
+
+    // Try server endpoint as well
     try {
       const res = await fetch(`/api/auth/status/${encodeURIComponent(currentUser.email)}`);
       const isJson = res.headers.get("content-type")?.includes("application/json");
       if (res.ok && isJson) {
         const data = await res.json();
-        if (data.status && data.status !== currentUser.status) {
-          setCurrentUser((prev) =>
-            prev ? { ...prev, status: data.status, role: data.role || prev.role } : null
-          );
+        if (data.status) {
+          newStatus = data.status;
+          if (data.role) newRole = data.role;
         }
       }
     } catch (err) {
-      console.error("Error refreshing status:", err);
+      console.warn("Server status refresh notice:", err);
+    }
+
+    if (newStatus && (newStatus !== currentUser.status || (newRole && newRole !== currentUser.role))) {
+      setCurrentUser((prev) =>
+        prev ? { ...prev, status: newStatus, role: newRole || prev.role } : null
+      );
     }
   };
 
