@@ -38,10 +38,48 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
 
       <div className="flex items-center gap-3 sm:gap-6">
+        {/* Navigation Switcher between Client App & Host Admin Portal */}
+        {user && (
+          <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800">
+            <button
+              onClick={() => setActiveView("app")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                activeView === "app"
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <LayoutDashboard className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Trading App</span>
+            </button>
+
+            {user.role === "admin" && (
+              <button
+                onClick={() => setActiveView("admin")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                  activeView === "admin"
+                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <Settings className="w-3.5 h-3.5" />
+                <span>Host Admin Portal</span>
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Status indicator */}
         {user && (
           <div className="hidden lg:flex items-center gap-2 px-3 py-1 rounded-full bg-slate-950/60 border border-slate-800 text-xs">
-            {user.status === "approved" || user.role === "admin" ? (
+            {user.role === "admin" ? (
+              <>
+                <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>
+                <span className="text-indigo-400 font-medium uppercase tracking-wider text-[10px] flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3" /> Host Master Admin
+                </span>
+              </>
+            ) : user.status === "approved" ? (
               <>
                 <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
                 <span className="text-emerald-400 font-medium uppercase tracking-wider text-[10px] flex items-center gap-1">
