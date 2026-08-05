@@ -117,7 +117,8 @@ export default function App() {
     const fetchUserData = async () => {
       try {
         const res = await fetch(`/api/user/data/${encodeURIComponent(currentUser.email)}`);
-        if (res.ok) {
+        const isJson = res.headers.get("content-type")?.includes("application/json");
+        if (res.ok && isJson) {
           const data = await res.json();
           if (data.tradingData) {
             setTradingData(data.tradingData);
@@ -223,7 +224,8 @@ export default function App() {
     if (!currentUser) return;
     try {
       const res = await fetch(`/api/auth/status/${encodeURIComponent(currentUser.email)}`);
-      if (res.ok) {
+      const isJson = res.headers.get("content-type")?.includes("application/json");
+      if (res.ok && isJson) {
         const data = await res.json();
         if (data.status && data.status !== currentUser.status) {
           setCurrentUser((prev) =>

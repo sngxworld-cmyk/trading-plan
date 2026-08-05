@@ -63,8 +63,9 @@ export const HostAdminPortal: React.FC<HostAdminPortalProps> = ({
     setLoading(true);
     try {
       const res = await fetch("/api/admin/users");
-      const data = await res.json();
-      if (res.ok) {
+      const isJson = res.headers.get("content-type")?.includes("application/json");
+      if (res.ok && isJson) {
+        const data = await res.json();
         setUsers(data.users || []);
         setPreApprovedGmails(data.preApprovedEmails || []);
         setLogs(data.logs || []);

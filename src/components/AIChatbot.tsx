@@ -57,9 +57,12 @@ export const AIChatbot: React.FC = () => {
         }),
       });
 
-      const data = await res.json();
-
-      const botReplyText = data.reply || "Assistant active. Support line: +94 75 284 0841.";
+      let botReplyText = "Assistant active. Direct support line: +94 75 284 0841.";
+      const isJson = res.headers.get("content-type")?.includes("application/json");
+      if (res.ok && isJson) {
+        const data = await res.json();
+        if (data.reply) botReplyText = data.reply;
+      }
 
       const botMsgObj: Message = {
         id: "bot_" + Date.now(),

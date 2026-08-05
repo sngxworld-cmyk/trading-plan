@@ -24,7 +24,9 @@ interface DBStructure {
   logs: { timestamp: string; message: string; type: "info" | "access" | "warn" }[];
 }
 
-const DB_FILE = path.join(process.cwd(), "data", "db.json");
+const DB_FILE = process.env.VERCEL
+  ? path.join("/tmp", "db.json")
+  : path.join(process.cwd(), "data", "db.json");
 
 function ensureDirectoryExistence(filePath: string) {
   const dirname = path.dirname(filePath);
@@ -127,8 +129,9 @@ function logActivity(message: string, type: "info" | "access" | "warn" = "info")
   saveDB(currentDb);
 }
 
+export const app = express();
+
 async function startServer() {
-  const app = express();
   const PORT = 3000;
 
   app.use(express.json({ limit: "10mb" }));
@@ -816,3 +819,5 @@ Instructions:
 }
 
 startServer();
+
+export default app;
