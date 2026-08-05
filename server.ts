@@ -538,14 +538,16 @@ async function startServer() {
 
   // ADMIN: Password Reset for Client
   app.post("/api/admin/reset-password", (req, res) => {
-    const { userId, newPassword } = req.body;
+    const { userId, email, newPassword } = req.body;
 
-    if (!userId || !newPassword || newPassword.length < 3) {
-      return res.status(400).json({ error: "User ID and a new password (min 3 chars) are required." });
+    if ((!userId && !email) || !newPassword || newPassword.length < 3) {
+      return res.status(400).json({ error: "User ID/Email and a new password (min 3 chars) are required." });
     }
 
     const currentDb = getDB();
-    const targetUser = currentDb.users.find((u) => u.id === userId);
+    const targetUser = currentDb.users.find(
+      (u) => u.id === userId || (email && u.email.trim().toLowerCase() === email.trim().toLowerCase())
+    );
     if (!targetUser) {
       return res.status(404).json({ error: "Client account not found." });
     }
@@ -562,14 +564,16 @@ async function startServer() {
 
   // ADMIN: Change User Role (promote to admin / demote to client)
   app.post("/api/admin/update-role", (req, res) => {
-    const { userId, role } = req.body;
+    const { userId, email, role } = req.body;
 
-    if (!userId || !["admin", "client"].includes(role)) {
-      return res.status(400).json({ error: "Invalid role specified." });
+    if ((!userId && !email) || !["admin", "client"].includes(role)) {
+      return res.status(400).json({ error: "Invalid parameters specified." });
     }
 
     const currentDb = getDB();
-    const targetUser = currentDb.users.find((u) => u.id === userId);
+    const targetUser = currentDb.users.find(
+      (u) => u.id === userId || (email && u.email.trim().toLowerCase() === email.trim().toLowerCase())
+    );
     if (!targetUser) {
       return res.status(404).json({ error: "Client account not found." });
     }
@@ -616,10 +620,12 @@ async function startServer() {
 
   // ADMIN: Delete user
   app.post("/api/admin/delete-user", (req, res) => {
-    const { userId } = req.body;
+    const { userId, email } = req.body;
     const currentDb = getDB();
 
-    const userIdx = currentDb.users.findIndex((u) => u.id === userId);
+    const userIdx = currentDb.users.findIndex(
+      (u) => u.id === userId || (email && u.email.trim().toLowerCase() === email.trim().toLowerCase())
+    );
     if (userIdx === -1) {
       return res.status(404).json({ error: "User not found." });
     }
