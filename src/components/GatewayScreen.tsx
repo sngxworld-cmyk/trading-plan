@@ -285,21 +285,29 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
           }
 
           const isMasterAdmin = cleanEmail === "sngxworld@gmail.com";
+          const preApprovedList: string[] = JSON.parse(localStorage.getItem("sngx_preapproved_emails") || "[]");
+          const isPreApproved = isMasterAdmin || preApprovedList.some((e: string) => e.toLowerCase() === cleanEmail);
+
           const newUser = {
             id: "usr_" + Date.now(),
             email: cleanEmail,
             username: username.trim(),
             password,
             role: isMasterAdmin ? ("admin" as const) : ("client" as const),
-            status: isMasterAdmin ? ("approved" as const) : ("approved" as const),
+            status: isPreApproved ? ("approved" as const) : ("pending" as const),
             createdAt: new Date().toISOString(),
           };
 
           localUsers.push(newUser);
           localStorage.setItem("sngx_local_users", JSON.stringify(localUsers));
 
-          setSuccessMessage("Account registered successfully! Logging you in...");
-          setTimeout(() => onLoginSuccess(newUser), 800);
+          if (newUser.status === "approved") {
+            setSuccessMessage("Pre-approved access! Logging you in...");
+            setTimeout(() => onLoginSuccess(newUser), 800);
+          } else {
+            setSuccessMessage("Account registered! Status: UNDER REVIEW. Awaiting Host Admin approval.");
+            setTimeout(() => onRegisteredPending(newUser), 800);
+          }
         }
       } else {
         let loginHandled = false;
