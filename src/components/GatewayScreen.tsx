@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { createChart, CandlestickSeries, IChartApi, ISeriesApi } from "lightweight-charts";
 import { Eye, EyeOff, Lock, Mail, User, ShieldCheck, Flame, TrendingUp, PhoneCall, ArrowRight, KeyRound } from "lucide-react";
 import { UserProfile } from "../types";
+import { registerUserInFirestore, loginUserInFirestore } from "../lib/userStore";
 
 interface GatewayScreenProps {
   onLoginSuccess: (user: UserProfile) => void;
@@ -253,121 +254,38 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
 
     try {
       if (isRegisterMode) {
-        let registrationHandled = false;
-        const result = await safeFetchJson("/api/auth/register", {
+        // Direct Firestore registration (works across all devices, mobile phones, Vercel, etc.)
+        const newUser = await registerUserInFirestore({ email, username, password });
+
+        // Also sync with server endpoint if backend is available
+        fetch("/api/auth/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email, username, password }),
-        });
+        }).catch(() => {});
 
-        if (result.isJson && result.data) {
-          registrationHandled = true;
-          if (!result.ok) {
-            throw new Error(result.data.error || "Registration failed.");
-          }
-
-          if (result.data.status === "approved") {
-            setSuccessMessage("Pre-approved access! Logging you in...");
-            setTimeout(() => onLoginSuccess(result.data.user), 800);
-          } else {
-            setSuccessMessage("Account registered! Status: UNDER REVIEW.");
-            setTimeout(() => onRegisteredPending(result.data.user), 800);
-          }
-        }
-
-        if (!registrationHandled) {
-          // Client-side registration fallback for static deployments (Vercel, Netlify, etc.)
-          const cleanEmail = email.trim().toLowerCase();
-          const localUsers = JSON.parse(localStorage.getItem("sngx_local_users") || "[]");
-          const existing = localUsers.find((u: any) => u.email.toLowerCase() === cleanEmail);
-          if (existing) {
-            throw new Error("This email is already registered.");
-          }
-
-          const isMasterAdmin = cleanEmail === "sngxworld@gmail.com";
-          const preApprovedList: string[] = JSON.parse(localStorage.getItem("sngx_preapproved_emails") || "[]");
-          const isPreApproved = isMasterAdmin || preApprovedList.some((e: string) => e.toLowerCase() === cleanEmail);
-
-          const newUser = {
-            id: "usr_" + Date.now(),
-            email: cleanEmail,
-            username: username.trim(),
-            password,
-            role: isMasterAdmin ? ("admin" as const) : ("client" as const),
-            status: isPreApproved ? ("approved" as const) : ("pending" as const),
-            createdAt: new Date().toISOString(),
-          };
-
-          localUsers.push(newUser);
-          localStorage.setItem("sngx_local_users", JSON.stringify(localUsers));
-
-          if (newUser.status === "approved") {
-            setSuccessMessage("Pre-approved access! Logging you in...");
-            setTimeout(() => onLoginSuccess(newUser), 800);
-          } else {
-            setSuccessMessage("Account registered! Status: UNDER REVIEW. Awaiting Host Admin approval.");
-            setTimeout(() => onRegisteredPending(newUser), 800);
-          }
+        if (newUser.status === "approved") {
+          setSuccessMessage("Pre-approved access! Logging you in...");
+          setTimeout(() => onLoginSuccess(newUser), 800);
+        } else {
+          setSuccessMessage("Account registered! Status: UNDER REVIEW. Awaiting Host Admin approval.");
+          setTimeout(() => onRegisteredPending(newUser), 800);
         }
       } else {
-        let loginHandled = false;
-        const result = await safeFetchJson("/api/auth/login", {
+        // Direct Firestore login
+        const { user: loggedInUser, status } = await loginUserInFirestore(email, password);
+
+        // Also sync with server endpoint if backend is available
+        fetch("/api/auth/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ identifier: email, password }),
-        });
+        }).catch(() => {});
 
-        if (result.isJson && result.data) {
-          loginHandled = true;
-          if (!result.ok) {
-            if (result.data.status === "pending" && result.data.user) {
-              onRegisteredPending(result.data.user);
-              return;
-            }
-            throw new Error(result.data.error || "Login failed.");
-          }
-
-          onLoginSuccess(result.data.user);
-        }
-
-        if (!loginHandled) {
-          // Client-side login fallback for static deployments (Vercel, Netlify, etc.)
-          const cleanIdent = email.trim().toLowerCase();
-
-          // Check Master Host Admin default credentials
-          if (
-            (cleanIdent === "sngxworld@gmail.com" || cleanIdent === "sngxadmin") &&
-            password === "adminpassword123"
-          ) {
-            const adminUser = {
-              id: "usr_admin_master",
-              email: "sngxworld@gmail.com",
-              username: "sngxadmin",
-              role: "admin" as const,
-              status: "approved" as const,
-            };
-            onLoginSuccess(adminUser);
-            return;
-          }
-
-          // Check client-side stored users
-          const localUsers = JSON.parse(localStorage.getItem("sngx_local_users") || "[]");
-          const matched = localUsers.find(
-            (u: any) =>
-              (u.email.toLowerCase() === cleanIdent || u.username.toLowerCase() === cleanIdent) &&
-              u.password === password
-          );
-
-          if (matched) {
-            if (matched.status === "pending") {
-              onRegisteredPending(matched);
-            } else {
-              onLoginSuccess(matched);
-            }
-            return;
-          }
-
-          throw new Error("Invalid credentials. Please check your username/email and password.");
+        if (status === "pending") {
+          onRegisteredPending(loggedInUser);
+        } else {
+          onLoginSuccess(loggedInUser);
         }
       }
     } catch (err: any) {

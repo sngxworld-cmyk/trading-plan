@@ -5,6 +5,17 @@ import {
   AdminStats,
 } from "../types";
 import {
+  fetchAllAdminDataFromFirestore,
+  grantUserAccessInFirestore,
+  revokeUserAccessInFirestore,
+  preApproveGmailInFirestore,
+  removePreApprovedGmailInFirestore,
+  deleteUserInFirestore,
+  approveAllPendingInFirestore,
+  getUserDataFromFirestore,
+  saveUserDataToFirestore,
+} from "../lib/userStore";
+import {
   ShieldCheck,
   UserCheck,
   UserX,
@@ -61,6 +72,12 @@ export const HostAdminPortal: React.FC<HostAdminPortalProps> = ({
 
   const fetchAdminData = async () => {
     setLoading(true);
+
+    // 1. Fetch from Firestore (universal source of truth across mobile, PC, Vercel)
+    const { users: fsUsers, preApprovedGmails: fsGmails, logs: fsLogs } =
+      await fetchAllAdminDataFromFirestore();
+
+    // 2. Try fetching from server API if available
     let serverUsers: AdminUserRecord[] = [];
     let serverGmails: string[] = [];
     let serverLogs: any[] = [];
@@ -84,15 +101,19 @@ export const HostAdminPortal: React.FC<HostAdminPortalProps> = ({
     const localPreApproved: string[] = JSON.parse(localStorage.getItem("sngx_preapproved_emails") || "[]");
 
     const combinedUserMap = new Map<string, AdminUserRecord>();
+    fsUsers.forEach((u) => combinedUserMap.set(u.email.toLowerCase(), u));
     serverUsers.forEach((u) => combinedUserMap.set(u.email.toLowerCase(), u));
     localUsers.forEach((u) => combinedUserMap.set(u.email.toLowerCase(), u));
 
     const finalUsers = Array.from(combinedUserMap.values());
-    const finalGmails = Array.from(new Set([...serverGmails, ...localPreApproved]));
+    const finalGmails = Array.from(
+      new Set([...fsGmails, ...serverGmails, ...localPreApproved])
+    );
+    const finalLogs = fsLogs.length > 0 ? fsLogs : serverLogs;
 
     setUsers(finalUsers);
     setPreApprovedGmails(finalGmails);
-    setLogs(serverLogs);
+    setLogs(finalLogs);
 
     const total = finalUsers.length;
     const approved = finalUsers.filter((u) => u.status === "approved").length;
@@ -103,7 +124,7 @@ export const HostAdminPortal: React.FC<HostAdminPortalProps> = ({
         totalUsers: total,
         approvedUsers: approved,
         pendingUsers: pending,
-        systemHealth: "100% Operational",
+        systemHealth: "100% Operational (Firestore Synced)",
         memoryUsageMB: 14,
         serverUptimeHours: 24,
       }
@@ -114,83 +135,55 @@ export const HostAdminPortal: React.FC<HostAdminPortalProps> = ({
 
   useEffect(() => {
     fetchAdminData();
-    const timer = setInterval(fetchAdminData, 6000); // Auto refresh every 6 seconds
+    const timer = setInterval(fetchAdminData, 5000); // Auto refresh every 5 seconds
     return () => clearInterval(timer);
   }, []);
 
   const handleGrantAccess = async (userOrEmail: { id?: string; email: string }) => {
     const targetEmail = userOrEmail.email.trim().toLowerCase();
 
-    // Update local storage
-    const localUsers: AdminUserRecord[] = JSON.parse(localStorage.getItem("sngx_local_users") || "[]");
-    const updatedLocals = localUsers.map((u) =>
-      u.email.toLowerCase() === targetEmail ? { ...u, status: "approved" as const } : u
-    );
-    localStorage.setItem("sngx_local_users", JSON.stringify(updatedLocals));
+    // Direct Firestore update (instantly grants access on any phone/device)
+    await grantUserAccessInFirestore(targetEmail);
 
-    try {
-      const res = await fetch("/api/admin/approve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: userOrEmail.id, email: userOrEmail.email }),
-      });
-      const isJson = res.headers.get("content-type")?.includes("application/json");
-      if (res.ok && isJson) {
-        const data = await res.json();
-        setActionMessage({ text: data.message, type: "success" });
-      } else {
-        setActionMessage({ text: `Access granted for ${userOrEmail.email}!`, type: "success" });
-      }
-    } catch {
-      setActionMessage({ text: `Access granted for ${userOrEmail.email}!`, type: "success" });
-    }
+    // Call server API if present
+    fetch("/api/admin/approve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: userOrEmail.id, email: userOrEmail.email }),
+    }).catch(() => {});
+
+    setActionMessage({ text: `Access granted for ${userOrEmail.email}!`, type: "success" });
     fetchAdminData();
   };
 
   const handleApproveAllPending = async () => {
     if (!confirm("Grant instant access to all pending client Gmail accounts?")) return;
 
-    const localUsers: AdminUserRecord[] = JSON.parse(localStorage.getItem("sngx_local_users") || "[]");
-    const updatedLocals = localUsers.map((u) => ({ ...u, status: "approved" as const }));
-    localStorage.setItem("sngx_local_users", JSON.stringify(updatedLocals));
+    // Direct Firestore update
+    await approveAllPendingInFirestore();
 
-    try {
-      await fetch("/api/admin/approve-all", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-    } catch {
-      // Ignored
-    }
-    setActionMessage({ text: "All pending client accounts have been approved!", type: "success" });
+    fetch("/api/admin/approve-all", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    }).catch(() => {});
+
+    setActionMessage({ text: "All pending client accounts have been approved in Firestore!", type: "success" });
     fetchAdminData();
   };
 
   const handleRevokeAccess = async (userOrEmail: { id?: string; email: string }) => {
     const targetEmail = userOrEmail.email.trim().toLowerCase();
 
-    const localUsers: AdminUserRecord[] = JSON.parse(localStorage.getItem("sngx_local_users") || "[]");
-    const updatedLocals = localUsers.map((u) =>
-      u.email.toLowerCase() === targetEmail ? { ...u, status: "pending" as const } : u
-    );
-    localStorage.setItem("sngx_local_users", JSON.stringify(updatedLocals));
+    // Direct Firestore update (instantly revokes access on any phone/device)
+    await revokeUserAccessInFirestore(targetEmail);
 
-    try {
-      const res = await fetch("/api/admin/reject", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: userOrEmail.id, email: userOrEmail.email }),
-      });
-      const isJson = res.headers.get("content-type")?.includes("application/json");
-      if (res.ok && isJson) {
-        const data = await res.json();
-        setActionMessage({ text: data.message, type: "success" });
-      } else {
-        setActionMessage({ text: `Access revoked for ${userOrEmail.email}. Account set to Under Review.`, type: "success" });
-      }
-    } catch {
-      setActionMessage({ text: `Access revoked for ${userOrEmail.email}. Account set to Under Review.`, type: "success" });
-    }
+    fetch("/api/admin/reject", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: userOrEmail.id, email: userOrEmail.email }),
+    }).catch(() => {});
+
+    setActionMessage({ text: `Access revoked for ${userOrEmail.email}.`, type: "success" });
     fetchAdminData();
   };
 
@@ -202,23 +195,17 @@ export const HostAdminPortal: React.FC<HostAdminPortalProps> = ({
     }
 
     const clean = newGmail.trim().toLowerCase();
-    const preApprovedList: string[] = JSON.parse(localStorage.getItem("sngx_preapproved_emails") || "[]");
-    if (!preApprovedList.includes(clean)) {
-      preApprovedList.push(clean);
-      localStorage.setItem("sngx_preapproved_emails", JSON.stringify(preApprovedList));
-    }
 
-    try {
-      await fetch("/api/admin/add-gmail", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: clean }),
-      });
-    } catch {
-      // Ignored
-    }
+    // Direct Firestore pre-approval
+    await preApproveGmailInFirestore(clean);
 
-    setActionMessage({ text: `Gmail ${clean} added to pre-approved whitelist.`, type: "success" });
+    fetch("/api/admin/add-gmail", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: clean }),
+    }).catch(() => {});
+
+    setActionMessage({ text: `Gmail ${clean} added to pre-approved whitelist in Firestore.`, type: "success" });
     setNewGmail("");
     fetchAdminData();
   };
@@ -293,18 +280,36 @@ export const HostAdminPortal: React.FC<HostAdminPortalProps> = ({
   const handleInspectUserData = async (userId: string, email?: string) => {
     setInspectLoading(true);
     let found = false;
-    try {
-      const res = await fetch(`/api/admin/user-details/${userId}`);
-      const isJson = res.headers.get("content-type")?.includes("application/json");
-      if (res.ok && isJson) {
-        const data = await res.json();
-        if (data.user) {
-          setInspectUser(data.user);
-          found = true;
-        }
+    const targetEmail = email || "";
+
+    if (targetEmail) {
+      const fsData = await getUserDataFromFirestore(targetEmail);
+      if (fsData) {
+        setInspectUser({
+          id: userId,
+          email: targetEmail,
+          tradingData: fsData.tradingData || {},
+          yearRange: fsData.yearRange,
+          startMonth: fsData.startMonth,
+        });
+        found = true;
       }
-    } catch {
-      // Ignored
+    }
+
+    if (!found) {
+      try {
+        const res = await fetch(`/api/admin/user-details/${userId}`);
+        const isJson = res.headers.get("content-type")?.includes("application/json");
+        if (res.ok && isJson) {
+          const data = await res.json();
+          if (data.user) {
+            setInspectUser(data.user);
+            found = true;
+          }
+        }
+      } catch {
+        // Ignored
+      }
     }
 
     if (!found) {
@@ -326,28 +331,15 @@ export const HostAdminPortal: React.FC<HostAdminPortalProps> = ({
     if (!confirm(`Are you sure you want to permanently delete account for ${email}?`)) return;
 
     const targetEmail = email.trim().toLowerCase();
-    const localUsers: AdminUserRecord[] = JSON.parse(localStorage.getItem("sngx_local_users") || "[]");
-    const updatedLocals = localUsers.filter(
-      (u) => u.email.toLowerCase() !== targetEmail && u.id !== userId
-    );
-    localStorage.setItem("sngx_local_users", JSON.stringify(updatedLocals));
+    await deleteUserInFirestore(targetEmail);
 
-    try {
-      const res = await fetch("/api/admin/delete-user", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, email }),
-      });
-      const isJson = res.headers.get("content-type")?.includes("application/json");
-      if (res.ok && isJson) {
-        const data = await res.json();
-        setActionMessage({ text: data.message, type: "success" });
-      } else {
-        setActionMessage({ text: `Account for ${email} permanently deleted.`, type: "success" });
-      }
-    } catch {
-      setActionMessage({ text: `Account for ${email} permanently deleted.`, type: "success" });
-    }
+    fetch("/api/admin/delete-user", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, email }),
+    }).catch(() => {});
+
+    setActionMessage({ text: `Account for ${email} permanently deleted from Firestore.`, type: "success" });
     fetchAdminData();
   };
 

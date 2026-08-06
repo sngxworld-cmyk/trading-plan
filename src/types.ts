@@ -7,8 +7,12 @@ export interface UserProfile {
   username: string;
   role: UserRole;
   status: UserStatus;
+  createdAt?: string;
+  lastLogin?: string;
   tradingData?: TradingDataStore | null;
 }
+
+export type User = UserProfile;
 
 export interface DayRecord {
   state: "green" | "red" | "neutral" | "";
@@ -42,14 +46,17 @@ export interface AdminUserRecord {
   status: UserStatus;
   createdAt: string;
   lastLogin?: string;
-  hasData: boolean;
+  hasData?: boolean;
 }
 
 export interface AuditLogItem {
+  id?: string;
   timestamp: string;
   message: string;
-  type: "info" | "access" | "warn";
+  type: "info" | "access" | "warn" | "success" | "warning";
 }
+
+export type AuditLog = AuditLogItem;
 
 export interface AdminStats {
   totalUsers: number;

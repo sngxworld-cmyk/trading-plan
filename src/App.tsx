@@ -154,6 +154,9 @@ export default function App() {
 
     // 3. Subscribe to real-time Firestore changes for user Gmail
     const unsubscribe = subscribeUserDataFromFirestore(currentUser.email, (data) => {
+      if (data?.status && data.status !== currentUser.status) {
+        setCurrentUser((prev) => (prev ? { ...prev, status: data.status } : null));
+      }
       if (data?.tradingData && Object.keys(data.tradingData).length > 0) {
         setTradingData(data.tradingData);
       }

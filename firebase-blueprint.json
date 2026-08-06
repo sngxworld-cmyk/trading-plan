@@ -41,7 +41,15 @@
   "firestore": {
     "/users/{userEmail}": {
       "schema": "users",
-      "description": "User profile and trading plan records"
+      "description": "User profile, credentials, access status, and trading plan records"
+    },
+    "/preApprovedEmails/{userEmail}": {
+      "schema": "preApprovedEmails",
+      "description": "Pre-granted Gmail whitelist documents"
+    },
+    "/logs/{logId}": {
+      "schema": "logs",
+      "description": "Admin and security audit logs"
     }
   }
 }
