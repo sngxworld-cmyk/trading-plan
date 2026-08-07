@@ -309,7 +309,7 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-semibold uppercase tracking-widest mb-3">
               <ShieldCheck className="w-3.5 h-3.5" /> Core Gateway Infrastructure
             </div>
-            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white mb-2">
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white mb-2">
               SNGz<span className="text-indigo-500">TRADES</span> Pro Journal
             </h1>
             <p className="text-sm text-slate-400 max-w-lg">

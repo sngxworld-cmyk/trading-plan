@@ -353,46 +353,46 @@ export const HostAdminPortal: React.FC<HostAdminPortalProps> = ({
   });
 
   return (
-    <div className="min-h-[calc(100vh-64px)] bg-slate-950 text-slate-100 p-4 sm:p-8 font-sans">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="min-h-[calc(100vh-64px)] bg-slate-950 text-slate-100 p-3 sm:p-8 font-sans">
+      <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6">
         {/* Header Title Banner */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900 border border-slate-800 p-3.5 sm:p-6 rounded-xl sm:rounded-2xl shadow-xl">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-semibold uppercase tracking-widest mb-2 font-mono">
-              <ShieldCheck className="w-4 h-4" /> SNGxJOURNAL Master Control Web
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] sm:text-xs font-semibold uppercase tracking-wider mb-1.5 font-mono">
+              <ShieldCheck className="w-3.5 h-3.5" /> SNGxJOURNAL Master Control Web
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+            <h1 className="text-sm sm:text-base font-bold text-white tracking-normal leading-snug">
               Client Gmail Login & Access Control
             </h1>
-            <p className="text-xs sm:text-sm text-slate-400 mt-1">
+            <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">
               Grant or revoke Gmail access for clients registering on your Trade Journal Tracker web app.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             {stats.pendingUsers > 0 && (
               <button
                 onClick={handleApproveAllPending}
-                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all shadow-lg shadow-emerald-600/30 flex items-center gap-2"
+                className="flex-1 sm:flex-none px-3 py-1.5 sm:px-4 sm:py-2.5 rounded-lg sm:rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] sm:text-xs transition-all shadow-md flex items-center justify-center gap-1.5"
               >
-                <CheckCheck className="w-4 h-4" /> Grant All ({stats.pendingUsers}) Pending
+                <CheckCheck className="w-3.5 h-3.5" /> Grant All ({stats.pendingUsers})
               </button>
             )}
 
             <button
               onClick={fetchAdminData}
               disabled={loading}
-              className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors flex items-center gap-2 text-xs font-semibold"
+              className="px-3 py-1.5 sm:p-2.5 rounded-lg sm:rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors flex items-center justify-center gap-1.5 text-[11px] sm:text-xs font-semibold"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-indigo-400" : ""}`} />
-              Sync Data
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-indigo-400" : ""}`} />
+              Sync
             </button>
 
             <button
               onClick={onReturnToApp}
-              className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-2"
+              className="flex-1 sm:flex-none px-3 py-1.5 sm:px-4 sm:py-2.5 rounded-lg sm:rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-[11px] sm:text-xs transition-all shadow-md flex items-center justify-center gap-1.5"
             >
-              <ExternalLink className="w-4 h-4" /> Open Client App
+              <ExternalLink className="w-3.5 h-3.5" /> Open App
             </button>
           </div>
         </div>

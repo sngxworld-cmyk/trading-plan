@@ -17,52 +17,52 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogout,
 }) => {
   return (
-    <nav className="h-16 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md flex items-center justify-between px-4 sm:px-8 shrink-0 z-30 sticky top-0">
-      <div className="flex items-center gap-3">
-        <div className="w-9 h-9 bg-indigo-600 rounded-lg flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-600/30">
+    <nav className="h-16 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md flex items-center justify-between px-2.5 sm:px-8 shrink-0 z-30 sticky top-0">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        <div className="w-8 h-8 sm:w-9 sm:h-9 bg-indigo-600 rounded-lg flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-600/30 text-xs sm:text-sm shrink-0">
           TJ
         </div>
-        <div className="flex flex-col">
-          <div className="flex items-center gap-2">
-            <span className="text-base sm:text-lg font-bold tracking-tight text-slate-100">
-              Trade Journal Tracker <span className="text-indigo-400 font-extrabold">Pro</span>
+        <div className="flex flex-col min-w-0">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <span className="text-xs sm:text-base md:text-lg font-bold tracking-tight text-slate-100 truncate">
+              Trade Journal <span className="text-indigo-400 font-extrabold">Pro</span>
             </span>
             <span className="hidden sm:inline-block text-[10px] bg-slate-800 text-indigo-400 border border-slate-700 px-2 py-0.5 rounded font-mono">
               v2.4 CORE
             </span>
           </div>
-          <span className="text-[10px] text-slate-500 font-mono tracking-wider uppercase">
+          <span className="hidden sm:block text-[10px] text-slate-500 font-mono tracking-wider uppercase">
             SNGxJOURNAL Ecosystem Matrix
           </span>
         </div>
       </div>
 
-      <div className="flex items-center gap-3 sm:gap-6">
+      <div className="flex items-center gap-1.5 sm:gap-6 shrink-0">
         {/* Navigation Switcher between Client App & Host Admin Portal */}
         {user && (
-          <div className="flex bg-slate-950 p-0.5 rounded-lg border border-slate-800">
+          <div className="flex bg-slate-950 p-0.5 rounded-lg border border-slate-800 shrink-0">
             <button
               onClick={() => setActiveView("app")}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+              className={`flex items-center gap-1 px-1.5 sm:px-2.5 py-1 rounded-md text-[11px] sm:text-xs font-medium transition-all whitespace-nowrap ${
                 activeView === "app"
                   ? "bg-indigo-600 text-white shadow-sm shadow-indigo-600/20"
                   : "text-slate-400 hover:text-slate-200"
               }`}
             >
-              <LayoutDashboard className="w-3.5 h-3.5" />
+              <LayoutDashboard className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               <span>Trade Journal</span>
             </button>
 
             {user.role === "admin" && (
               <button
                 onClick={() => setActiveView("admin")}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                className={`flex items-center gap-1 px-1.5 sm:px-2.5 py-1 rounded-md text-[11px] sm:text-xs font-medium transition-all whitespace-nowrap ${
                   activeView === "admin"
                     ? "bg-indigo-600 text-white shadow-sm shadow-indigo-600/20"
                     : "text-slate-400 hover:text-slate-200"
                 }`}
               >
-                <Settings className="w-3.5 h-3.5" />
+                <Settings className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                 <span>Host Admin</span>
               </button>
             )}

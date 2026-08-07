@@ -300,7 +300,7 @@ export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer
               Multi-Year Strategic Trade Journal Terminal
             </span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-white">
+          <h1 className="text-base sm:text-lg font-bold text-white leading-snug">
             TRADE JOURNAL METRIC PERFORMANCE TRACKER
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
@@ -401,38 +401,38 @@ export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer
       </div>
 
       {/* Tabs Bar */}
-      <div className="flex border-b border-slate-800 space-x-2">
+      <div className="flex border-b border-slate-800 gap-1.5 sm:gap-2 overflow-x-auto pb-0.5 no-scrollbar">
         <button
           onClick={() => setActiveTab("grid")}
-          className={`flex items-center gap-2 px-5 py-3 rounded-t-xl font-bold text-xs sm:text-sm transition-all border-t border-x ${
+          className={`flex items-center gap-1.5 px-3 sm:px-5 py-2 sm:py-3 rounded-t-lg sm:rounded-t-xl font-bold text-[11px] sm:text-xs md:text-sm transition-all border-t border-x shrink-0 whitespace-nowrap ${
             activeTab === "grid"
               ? "bg-slate-900 border-slate-800 text-indigo-400 border-b-2 border-b-indigo-500 shadow-lg"
               : "bg-slate-950 border-transparent text-slate-500 hover:text-slate-300"
           }`}
         >
-          <Grid className="w-4 h-4" /> Data Sheet Grid
+          <Grid className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Data Sheet Grid
         </button>
 
         <button
           onClick={() => setActiveTab("summary")}
-          className={`flex items-center gap-2 px-5 py-3 rounded-t-xl font-bold text-xs sm:text-sm transition-all border-t border-x ${
+          className={`flex items-center gap-1.5 px-3 sm:px-5 py-2 sm:py-3 rounded-t-lg sm:rounded-t-xl font-bold text-[11px] sm:text-xs md:text-sm transition-all border-t border-x shrink-0 whitespace-nowrap ${
             activeTab === "summary"
               ? "bg-slate-900 border-slate-800 text-indigo-400 border-b-2 border-b-indigo-500 shadow-lg"
               : "bg-slate-950 border-transparent text-slate-500 hover:text-slate-300"
           }`}
         >
-          <BarChart3 className="w-4 h-4" /> Analytics & Summary
+          <BarChart3 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Analytics & Summary
         </button>
 
         <button
           onClick={() => setActiveTab("goal")}
-          className={`flex items-center gap-2 px-5 py-3 rounded-t-xl font-bold text-xs sm:text-sm transition-all border-t border-x ${
+          className={`flex items-center gap-1.5 px-3 sm:px-5 py-2 sm:py-3 rounded-t-lg sm:rounded-t-xl font-bold text-[11px] sm:text-xs md:text-sm transition-all border-t border-x shrink-0 whitespace-nowrap ${
             activeTab === "goal"
               ? "bg-slate-900 border-slate-800 text-indigo-400 border-b-2 border-b-indigo-500 shadow-lg"
               : "bg-slate-950 border-transparent text-slate-500 hover:text-slate-300"
           }`}
         >
-          <Target className="w-4 h-4" /> Trading Goal
+          <Target className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Trading Goal
         </button>
       </div>
 

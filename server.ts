@@ -136,6 +136,31 @@ async function startServer() {
 
   app.use(express.json({ limit: "10mb" }));
 
+  // --- SECURITY FIREWALL MIDDLEWARE ---
+  // Blocks malicious automated scanners & exploit tools: Commix, SQLMap, OWASP ZAP, WAFW00F (wa00f)
+  app.use((req, res, next) => {
+    const userAgent = (req.headers["user-agent"] || "").toLowerCase();
+    const urlPath = (req.originalUrl || req.url || "").toLowerCase();
+    const queryStr = JSON.stringify(req.query || {}).toLowerCase();
+    const headersStr = JSON.stringify(req.headers || {}).toLowerCase();
+
+    const isCommix = /commix/i.test(userAgent) || /commix/i.test(urlPath) || /commix/i.test(queryStr);
+    const isSqlMap = /sqlmap/i.test(userAgent) || /sqlmap/i.test(urlPath) || /sqlmap/i.test(queryStr) || /sql\s*map/i.test(userAgent);
+    const isZap = /zaproxy|owasp-zap|owasp\s*zap|\bzap\b/i.test(userAgent) || /zaproxy|owasp-zap|\bzap\b/i.test(urlPath) || /zaproxy|owasp-zap|\bzap\b/i.test(headersStr);
+    const isWafw00f = /wafw00f|wa00f/i.test(userAgent) || /wafw00f|wa00f/i.test(urlPath) || /wafw00f|wa00f/i.test(queryStr) || /wafw00f|wa00f/i.test(headersStr);
+
+    if (isCommix || isSqlMap || isZap || isWafw00f) {
+      const toolName = isCommix ? "Commix" : isSqlMap ? "SQLMap" : isZap ? "OWASP ZAP" : "WAFW00F (wa00f)";
+      logActivity(`[FIREWALL] Blocked malicious security scanner request (${toolName}) from ${req.ip || "unknown IP"}`, "warn");
+      return res.status(403).json({
+        error: "Access Denied",
+        message: `Firewall active: Malicious security scanning software (${toolName}) detected and blocked.`,
+      });
+    }
+
+    next();
+  });
+
   // --- API ROUTES ---
 
   // Health check
