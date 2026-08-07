@@ -11,7 +11,7 @@ import {
   limit,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { TradingDataStore, User, AdminUserRecord, AuditLog } from "../types";
+import { TradingDataStore, User, UserStatus, AdminUserRecord, AuditLog } from "../types";
 
 export enum OperationType {
   CREATE = "create",
@@ -156,7 +156,7 @@ export async function registerUserInFirestore(params: {
 export async function loginUserInFirestore(
   identifier: string,
   passwordInput: string
-): Promise<{ user: User; status: "approved" | "pending" | "revoked" }> {
+): Promise<{ user: User; status: UserStatus }> {
   const cleanIdent = identifier.trim().toLowerCase();
 
   // Special Master Admin fallback

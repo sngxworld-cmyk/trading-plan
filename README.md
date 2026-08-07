@@ -1,4 +1,4 @@
-# Trading Plan Pro (SNGxCRYPTO)
+# Trading Plan Pro (SNGxJOURNAL)
 
 A professional full-stack trading plan management and analytics platform built with React, TypeScript, Tailwind CSS, Express, and Firebase Cloud Firestore.
 

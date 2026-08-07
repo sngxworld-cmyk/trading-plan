@@ -310,7 +310,7 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
               <ShieldCheck className="w-3.5 h-3.5" /> Core Gateway Infrastructure
             </div>
             <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white mb-2">
-              SNGx<span className="text-indigo-500">CRYPTO</span> Pro Matrix
+              SNGz<span className="text-indigo-500">TRADES</span> Pro Journal
             </h1>
             <p className="text-sm text-slate-400 max-w-lg">
               Enterprise Multi-Year Trade Journal Tracker Infrastructure.
@@ -380,15 +380,7 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
               </div>
             </div>
 
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5 flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center shrink-0">
-                <TrendingUp className="w-4 h-4 text-emerald-400" />
-              </div>
-              <div>
-                <h4 className="text-xs font-bold text-slate-200">Trade Journal Engine Active</h4>
-                <p className="text-[11px] text-slate-400">Order block SMC strategy & PnL tracking</p>
-              </div>
-            </div>
+
           </div>
         </div>
 
@@ -523,7 +515,7 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
             </div>
 
             <div className="mt-4 pt-3 border-t border-slate-800 text-center text-[10px] text-slate-600 font-mono">
-              SNGxCRYPTO Ecosystem Systems Hub v4.2
+              SNGxJOURNAL Ecosystem Systems Hub v4.2
             </div>
           </div>
         </div>

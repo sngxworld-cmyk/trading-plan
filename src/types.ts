@@ -1,5 +1,5 @@
 export type UserRole = "admin" | "client";
-export type UserStatus = "pending" | "approved" | "rejected";
+export type UserStatus = "pending" | "approved" | "rejected" | "revoked";
 
 export interface UserProfile {
   id: string;

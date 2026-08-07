@@ -98,7 +98,7 @@ export default function App() {
   >([
     {
       sender: "bot",
-      text: "Hello! SNGxCRYPTO AI Trading Assistant active. English, Sinhala (සිංහල), or Singlish (e.g. 'kohomada log wenne') support ready.",
+      text: "Hello! SNGxJOURNAL AI Trading Assistant active. English, Sinhala (සිංහල), or Singlish (e.g. 'kohomada log wenne') support ready.",
     },
   ]);
   const [botInput, setBotInput] = useState("");
@@ -389,14 +389,14 @@ export default function App() {
       const data = await res.json();
       setBotMessages((prev) => [
         ...prev,
-        { sender: "bot", text: data.reply || "SNGxCRYPTO Assistant online." },
+        { sender: "bot", text: data.reply || "SNGxJOURNAL Assistant online." },
       ]);
     } catch (err) {
       setBotMessages((prev) => [
         ...prev,
         {
           sender: "bot",
-          text: "SNGxCRYPTO Assistant active. For urgent access assistance, contact host line: +94 75 284 0841.",
+          text: "SNGxJOURNAL Assistant active. For urgent access assistance, contact host line: +94 75 284 0841.",
         },
       ]);
     } finally {
@@ -541,7 +541,7 @@ export default function App() {
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 bg-slate-900/80 border border-slate-800 p-6 rounded-2xl shadow-xl backdrop-blur-md">
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold uppercase tracking-widest mb-2 font-mono">
-                <TrendingUp className="w-3.5 h-3.5" /> SNGxCRYPTO Enterprise
+                <TrendingUp className="w-3.5 h-3.5" /> SNGxJOURNAL Enterprise
               </div>
               <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
                 TRADE JOURNAL METRIC PERFORMANCE TRACKER
@@ -1198,7 +1198,7 @@ export default function App() {
       <button
         onClick={() => setIsBotOpen(!isBotOpen)}
         className="fixed bottom-5 right-5 z-40 w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white shadow-2xl shadow-indigo-600/50 flex items-center justify-center transition-all hover:scale-110 active:scale-95 border border-indigo-400/30"
-        title="Open SNGxCRYPTO AI Assistant"
+        title="Open SNGxJOURNAL AI Assistant"
       >
         <Sparkles className="w-5 h-5 animate-pulse" />
       </button>
@@ -1211,7 +1211,7 @@ export default function App() {
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></div>
               <span className="text-xs font-bold text-white tracking-wide">
-                SNGxCRYPTO AI Assistant
+                SNGxJOURNAL AI Assistant
               </span>
             </div>
             <button

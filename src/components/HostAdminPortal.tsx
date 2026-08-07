@@ -359,7 +359,7 @@ export const HostAdminPortal: React.FC<HostAdminPortalProps> = ({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-semibold uppercase tracking-widest mb-2 font-mono">
-              <ShieldCheck className="w-4 h-4" /> SNGxCRYPTO Master Control Web
+              <ShieldCheck className="w-4 h-4" /> SNGxJOURNAL Master Control Web
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
               Client Gmail Login & Access Control

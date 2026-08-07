@@ -752,7 +752,7 @@ async function startServer() {
       const isPureSinhala = /[\u0D80-\u0DFF]/.test(message);
       const isSinglish = query.includes("kohomada") || query.includes("wenne") || query.includes("poddak") || query.includes("login") || query.includes("karanna");
 
-      let reply = "SNGxCRYPTO AI Assistant Active. To access the 1-Year Strategic Trading Plan, register your Gmail and wait for Host Admin approval. For immediate assistance, contact +94 75 284 0841.";
+      let reply = "SNGxJOURNAL AI Assistant Active. To access the 1-Year Strategic Trading Plan, register your Gmail and wait for Host Admin approval. For immediate assistance, contact +94 75 284 0841.";
       if (isPureSinhala) {
         reply = "ඔබගේ Gmail ගිණුම ලියාපදිංචි කළ පසු Host Admin විසින් අනුමත කරනු ඇත. අනුමැතිය ලැබුණු පසු Charts සහ 1-Year Trading Plan සක්‍රීය වේ. සහාය සඳහා: +94 75 284 0841.";
       } else if (isSinglish) {
@@ -776,7 +776,7 @@ async function startServer() {
         ? `Previous conversation history:\n` + history.map((h: any) => `${h.sender === "user" ? "User" : "Assistant"}: ${h.text}`).join("\n") + "\n\n"
         : "";
 
-      const prompt = `You are the SNGxCRYPTO AI Assistant & Trading Mentor for the 1-Year Strategic Trading Plan web application.
+      const prompt = `You are the SNGxJOURNAL AI Assistant & Trading Mentor for the 1-Year Strategic Trading Plan web application.
 ${historyContext}The user asks: "${message}".
 
 Instructions:
@@ -801,11 +801,11 @@ Instructions:
       const isPureSinhala = /[\u0D80-\u0DFF]/.test(message);
       const isSinglish = query.includes("kohomada") || query.includes("wenne") || query.includes("login") || query.includes("karanna");
 
-      let fallbackReply = "SNGxCRYPTO AI Assistant active. For immediate access approval or trading support, call host hotline +94 75 284 0841.";
+      let fallbackReply = "SNGxJOURNAL AI Assistant active. For immediate access approval or trading support, call host hotline +94 75 284 0841.";
       if (isPureSinhala) {
-        fallbackReply = "SNGxCRYPTO AI සහායක සක්‍රීයයි. ප්‍රවේශය සඳහා ඔබගේ Gmail සටහන් කර Host Admin අනුමැතිය ලබාගන්න. හදිසි සහාය: +94 75 284 0841.";
+        fallbackReply = "SNGxJOURNAL AI සහායක සක්‍රීයයි. ප්‍රවේශය සඳහා ඔබගේ Gmail සටහන් කර Host Admin අනුමැතිය ලබාගන්න. හදිසි සහාය: +94 75 284 0841.";
       } else if (isSinglish) {
-        fallbackReply = "SNGxCRYPTO AI Assistant connected. Oyage Gmail Host Admin dwara approve kara ganna hotline ekata call karanna: +94 75 284 0841.";
+        fallbackReply = "SNGxJOURNAL AI Assistant connected. Oyage Gmail Host Admin dwara approve kara ganna hotline ekata call karanna: +94 75 284 0841.";
       }
 
       return res.json({ reply: fallbackReply });
