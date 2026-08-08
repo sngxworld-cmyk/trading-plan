@@ -233,24 +233,26 @@ export default function App() {
       </div>
 
       {/* Floating 3D Robot Mascot Trigger Button (Bottom Right) */}
-      <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end gap-1.5 animate-in zoom-in-90 duration-300">
-        <div
-          onClick={() => setIsBotOpen(!isBotOpen)}
-          className="relative group cursor-pointer"
-          title="Open SNGxJOURNAL 3D AI Assistant"
-        >
-          {/* Pulsing ambient glow ring behind 3D Robot */}
-          <div className="absolute inset-0 bg-indigo-500/30 rounded-full blur-xl group-hover:scale-125 transition-transform duration-300 animate-pulse" />
-          
-          <div className="w-16 h-16 sm:w-20 sm:h-20 bg-slate-900/90 border border-indigo-500/50 rounded-full shadow-2xl shadow-indigo-600/40 flex items-center justify-center relative overflow-hidden backdrop-blur-md group-hover:border-indigo-400 group-hover:scale-105 transition-all">
-            <Robot3D size={80} isTalking={isBotThinking} className="pointer-events-none" />
+      {!isBotOpen && (
+        <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end gap-1.5 animate-in zoom-in-90 duration-300">
+          <div
+            onClick={() => setIsBotOpen(true)}
+            className="relative group cursor-pointer"
+            title="Open SNGxJOURNAL 3D AI Assistant"
+          >
+            {/* Pulsing ambient glow ring behind 3D Robot */}
+            <div className="absolute inset-0 bg-indigo-500/30 rounded-full blur-xl group-hover:scale-125 transition-transform duration-300 animate-pulse" />
+            
+            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-slate-900/90 border border-indigo-500/50 rounded-full shadow-2xl shadow-indigo-600/40 flex items-center justify-center relative overflow-hidden backdrop-blur-md group-hover:border-indigo-400 group-hover:scale-105 transition-all">
+              <Robot3D size={80} isTalking={isBotThinking} className="pointer-events-none" />
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* AI Assistant Chat Window */}
       {isBotOpen && (
-        <div className="fixed bottom-24 right-4 sm:right-6 z-50 w-[calc(100vw-32px)] sm:w-96 h-[460px] bg-slate-900/95 border border-indigo-500/30 rounded-3xl shadow-2xl flex flex-col overflow-hidden backdrop-blur-2xl animate-in fade-in slide-in-from-bottom-4 duration-200">
+        <div className="fixed bottom-4 right-4 sm:right-6 z-50 w-[calc(100vw-32px)] sm:w-96 h-[480px] bg-slate-900/95 border border-indigo-500/40 rounded-3xl shadow-2xl flex flex-col overflow-hidden backdrop-blur-2xl animate-in fade-in slide-in-from-bottom-4 duration-200">
           {/* Header */}
           <div className="p-3.5 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
