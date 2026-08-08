@@ -131,35 +131,32 @@ function logActivity(message: string, type: "info" | "access" | "warn" = "info")
 
 export const app = express();
 
-async function startServer() {
-  const PORT = 3000;
+app.use(express.json({ limit: "10mb" }));
 
-  app.use(express.json({ limit: "10mb" }));
+// --- SECURITY FIREWALL MIDDLEWARE ---
+// Blocks malicious automated scanners & exploit tools: Commix, SQLMap, OWASP ZAP, WAFW00F (wa00f)
+app.use((req, res, next) => {
+  const userAgent = (req.headers["user-agent"] || "").toLowerCase();
+  const urlPath = (req.originalUrl || req.url || "").toLowerCase();
+  const queryStr = JSON.stringify(req.query || {}).toLowerCase();
+  const headersStr = JSON.stringify(req.headers || {}).toLowerCase();
 
-  // --- SECURITY FIREWALL MIDDLEWARE ---
-  // Blocks malicious automated scanners & exploit tools: Commix, SQLMap, OWASP ZAP, WAFW00F (wa00f)
-  app.use((req, res, next) => {
-    const userAgent = (req.headers["user-agent"] || "").toLowerCase();
-    const urlPath = (req.originalUrl || req.url || "").toLowerCase();
-    const queryStr = JSON.stringify(req.query || {}).toLowerCase();
-    const headersStr = JSON.stringify(req.headers || {}).toLowerCase();
+  const isCommix = /commix/i.test(userAgent) || /commix/i.test(urlPath) || /commix/i.test(queryStr);
+  const isSqlMap = /sqlmap/i.test(userAgent) || /sqlmap/i.test(urlPath) || /sqlmap/i.test(queryStr) || /sql\s*map/i.test(userAgent);
+  const isZap = /zaproxy|owasp-zap|owasp\s*zap|\bzap\b/i.test(userAgent) || /zaproxy|owasp-zap|\bzap\b/i.test(urlPath) || /zaproxy|owasp-zap|\bzap\b/i.test(headersStr);
+  const isWafw00f = /wafw00f|wa00f/i.test(userAgent) || /wafw00f|wa00f/i.test(urlPath) || /wafw00f|wa00f/i.test(queryStr) || /wafw00f|wa00f/i.test(headersStr);
 
-    const isCommix = /commix/i.test(userAgent) || /commix/i.test(urlPath) || /commix/i.test(queryStr);
-    const isSqlMap = /sqlmap/i.test(userAgent) || /sqlmap/i.test(urlPath) || /sqlmap/i.test(queryStr) || /sql\s*map/i.test(userAgent);
-    const isZap = /zaproxy|owasp-zap|owasp\s*zap|\bzap\b/i.test(userAgent) || /zaproxy|owasp-zap|\bzap\b/i.test(urlPath) || /zaproxy|owasp-zap|\bzap\b/i.test(headersStr);
-    const isWafw00f = /wafw00f|wa00f/i.test(userAgent) || /wafw00f|wa00f/i.test(urlPath) || /wafw00f|wa00f/i.test(queryStr) || /wafw00f|wa00f/i.test(headersStr);
+  if (isCommix || isSqlMap || isZap || isWafw00f) {
+    const toolName = isCommix ? "Commix" : isSqlMap ? "SQLMap" : isZap ? "OWASP ZAP" : "WAFW00F (wa00f)";
+    logActivity(`[FIREWALL] Blocked malicious security scanner request (${toolName}) from ${req.ip || "unknown IP"}`, "warn");
+    return res.status(403).json({
+      error: "Access Denied",
+      message: `Firewall active: Malicious security scanning software (${toolName}) detected and blocked.`,
+    });
+  }
 
-    if (isCommix || isSqlMap || isZap || isWafw00f) {
-      const toolName = isCommix ? "Commix" : isSqlMap ? "SQLMap" : isZap ? "OWASP ZAP" : "WAFW00F (wa00f)";
-      logActivity(`[FIREWALL] Blocked malicious security scanner request (${toolName}) from ${req.ip || "unknown IP"}`, "warn");
-      return res.status(403).json({
-        error: "Access Denied",
-        message: `Firewall active: Malicious security scanning software (${toolName}) detected and blocked.`,
-      });
-    }
-
-    next();
-  });
+  next();
+});
 
   // --- API ROUTES ---
 
@@ -958,26 +955,30 @@ Provide a concise, helpful, friendly, and expert response based on the above tra
     }
   });
 
-  // --- VITE / STATIC SERVING ---
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (_req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
-  }
+// --- VITE / STATIC SERVING & SERVER LISTEN ---
+if (process.env.NODE_ENV !== "production") {
+  createServerServer();
+} else if (!process.env.VERCEL) {
+  const distPath = path.join(process.cwd(), "dist");
+  app.use(express.static(distPath));
+  app.get("*", (_req, res) => {
+    res.sendFile(path.join(distPath, "index.html"));
+  });
+}
 
+async function createServerServer() {
+  const vite = await createViteServer({
+    server: { middlewareMode: true },
+    appType: "spa",
+  });
+  app.use(vite.middlewares);
+}
+
+if (!process.env.VERCEL) {
+  const PORT = 3000;
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
   });
 }
-
-startServer();
 
 export default app;

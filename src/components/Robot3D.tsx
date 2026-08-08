@@ -181,12 +181,12 @@ export const Robot3D: React.FC<Robot3DProps> = ({
     window.addEventListener("mousemove", handleMouseMove);
 
     let animationFrameId: number;
-    let clock = new THREE.Clock();
+    const startTime = performance.now();
 
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
 
-      const elapsedTime = clock.getElapsedTime();
+      const elapsedTime = (performance.now() - startTime) / 1000;
 
       // Floating hover motion
       robotGroup.position.y = Math.sin(elapsedTime * 2.5) * 0.12;
