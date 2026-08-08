@@ -32,13 +32,43 @@ export interface FirestoreErrorInfo {
   };
 }
 
+let isQuotaExceeded = false;
+let quotaExceededTime = 0;
+
+export function checkQuotaStatus(): boolean {
+  if (isQuotaExceeded && Date.now() - quotaExceededTime < 120000) {
+    return true;
+  }
+  if (isQuotaExceeded) {
+    isQuotaExceeded = false;
+  }
+  return false;
+}
+
 export function handleFirestoreError(
   error: unknown,
   operationType: OperationType,
   path: string | null
 ) {
+  const errStr = error instanceof Error ? error.message : String(error);
+
+  if (
+    errStr.includes("Quota exceeded") ||
+    errStr.includes("RESOURCE_EXHAUSTED") ||
+    errStr.includes("quota-exceeded") ||
+    errStr.includes("quota") ||
+    errStr.includes("429")
+  ) {
+    isQuotaExceeded = true;
+    quotaExceededTime = Date.now();
+    console.warn(
+      `[Firestore Quota Notice] ${operationType} on ${path}. Operating seamlessly via Local & Server DB.`
+    );
+    return;
+  }
+
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errStr,
     authInfo: {
       userId: null,
       email: null,
@@ -46,7 +76,7 @@ export function handleFirestoreError(
     operationType,
     path,
   };
-  console.error("Firestore Error: ", JSON.stringify(errInfo));
+  console.warn("Firestore Notice: ", JSON.stringify(errInfo));
 }
 
 // Normalize email key for Firestore document ID
@@ -59,6 +89,7 @@ export function cleanEmailKey(email: string): string {
  * Add an audit log into Firestore /logs
  */
 export async function addAuditLogToFirestore(message: string, type: "info" | "success" | "warning" = "info") {
+  if (checkQuotaStatus()) return;
   try {
     const id = "log_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6);
     await setDoc(doc(db, "logs", id), {
@@ -68,7 +99,7 @@ export async function addAuditLogToFirestore(message: string, type: "info" | "su
       type,
     });
   } catch (error) {
-    console.warn("Could not write audit log to Firestore:", error);
+    handleFirestoreError(error, OperationType.WRITE, "logs");
   }
 }
 
@@ -87,9 +118,11 @@ export async function registerUserInFirestore(params: {
 
   // 1. Check if user document already exists
   try {
-    const existingSnap = await getDoc(doc(db, "users", cleanEmail));
-    if (existingSnap.exists()) {
-      throw new Error("This email address is already registered.");
+    if (!checkQuotaStatus()) {
+      const existingSnap = await getDoc(doc(db, "users", cleanEmail));
+      if (existingSnap.exists()) {
+        throw new Error("This email address is already registered.");
+      }
     }
   } catch (err: any) {
     if (err.message?.includes("already registered")) throw err;
@@ -100,7 +133,7 @@ export async function registerUserInFirestore(params: {
   const isMasterAdmin = cleanEmail === "sngxworld@gmail.com";
   let isPreApproved = isMasterAdmin;
 
-  if (!isPreApproved) {
+  if (!isPreApproved && !checkQuotaStatus()) {
     try {
       const preSnap = await getDoc(doc(db, "preApprovedEmails", cleanEmail));
       if (preSnap.exists()) {
@@ -130,15 +163,26 @@ export async function registerUserInFirestore(params: {
     tradingData: {},
   };
 
-  try {
-    await setDoc(doc(db, "users", cleanEmail), firestoreRecord);
-    await addAuditLogToFirestore(
-      `New user registered: ${cleanEmail} (${status.toUpperCase()})`,
-      status === "approved" ? "success" : "info"
-    );
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, docPath);
+  if (!checkQuotaStatus()) {
+    try {
+      await setDoc(doc(db, "users", cleanEmail), firestoreRecord);
+      await addAuditLogToFirestore(
+        `New user registered: ${cleanEmail} (${status.toUpperCase()})`,
+        status === "approved" ? "success" : "info"
+      );
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, docPath);
+    }
   }
+
+  // Also register via Server API
+  try {
+    await fetch("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    });
+  } catch (e) {}
 
   // Local backup
   try {
@@ -172,39 +216,44 @@ export async function loginUserInFirestore(
       status: "approved",
       lastLogin: new Date().toISOString(),
     };
-    // Ensure master admin doc exists in Firestore
-    try {
-      await setDoc(
-        doc(db, "users", "sngxworld@gmail.com"),
-        {
-          id: masterAdmin.id,
-          email: masterAdmin.email,
-          username: masterAdmin.username,
-          role: "admin",
-          status: "approved",
-          password: "adminpassword123",
-          lastLogin: new Date().toISOString(),
-        },
-        { merge: true }
-      );
-    } catch (e) {}
+    if (!checkQuotaStatus()) {
+      try {
+        await setDoc(
+          doc(db, "users", "sngxworld@gmail.com"),
+          {
+            id: masterAdmin.id,
+            email: masterAdmin.email,
+            username: masterAdmin.username,
+            role: "admin",
+            status: "approved",
+            password: "adminpassword123",
+            lastLogin: new Date().toISOString(),
+          },
+          { merge: true }
+        );
+      } catch (e) {
+        handleFirestoreError(e, OperationType.WRITE, "users/sngxworld@gmail.com");
+      }
+    }
     return { user: masterAdmin, status: "approved" };
   }
 
   let matchedData: any = null;
 
   // Try direct lookup by email in Firestore
-  try {
-    const docSnap = await getDoc(doc(db, "users", cleanIdent));
-    if (docSnap.exists()) {
-      matchedData = docSnap.data();
+  if (!checkQuotaStatus()) {
+    try {
+      const docSnap = await getDoc(doc(db, "users", cleanIdent));
+      if (docSnap.exists()) {
+        matchedData = docSnap.data();
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.GET, `users/${cleanIdent}`);
     }
-  } catch (err) {
-    handleFirestoreError(err, OperationType.GET, `users/${cleanIdent}`);
   }
 
   // If not found by email key, try querying all users to match username
-  if (!matchedData) {
+  if (!matchedData && !checkQuotaStatus()) {
     try {
       const snap = await getDocs(collection(db, "users"));
       snap.forEach((d) => {
@@ -221,14 +270,31 @@ export async function loginUserInFirestore(
     }
   }
 
-  // Fallback check in local storage if offline/error
+  // Fallback check in local storage if offline/error/quota exceeded
   if (!matchedData) {
     try {
       const localUsers = JSON.parse(localStorage.getItem("sngx_local_users") || "[]");
       matchedData = localUsers.find(
         (u: any) =>
-          u.email.toLowerCase() === cleanIdent || u.username.toLowerCase() === cleanIdent
+          u.email?.toLowerCase() === cleanIdent || u.username?.toLowerCase() === cleanIdent
       );
+    } catch (e) {}
+  }
+
+  // Final fallback to Server API
+  if (!matchedData) {
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifier: cleanIdent, password: passwordInput }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.user) {
+          matchedData = data.user;
+        }
+      }
     } catch (e) {}
   }
 
@@ -251,14 +317,18 @@ export async function loginUserInFirestore(
     tradingData: matchedData.tradingData || {},
   };
 
-  // Update last login in Firestore
-  try {
-    await setDoc(
-      doc(db, "users", cleanEmailKey(user.email)),
-      { lastLogin: user.lastLogin },
-      { merge: true }
-    );
-  } catch (e) {}
+  // Update last login in Firestore if active
+  if (!checkQuotaStatus()) {
+    try {
+      await setDoc(
+        doc(db, "users", cleanEmailKey(user.email)),
+        { lastLogin: user.lastLogin },
+        { merge: true }
+      );
+    } catch (e) {
+      handleFirestoreError(e, OperationType.WRITE, `users/${cleanEmailKey(user.email)}`);
+    }
+  }
 
   if (user.status === "revoked") {
     throw new Error("Access Revoked. Your access to this portal has been revoked by Host Admin.");
@@ -277,6 +347,24 @@ export async function saveUserDataToFirestore(
 ) {
   const key = cleanEmailKey(email);
   if (!key) return;
+
+  // Always back up to localStorage
+  try {
+    if (tradingData && Object.keys(tradingData).length > 0) {
+      localStorage.setItem(`sngx_trading_data_${key}`, JSON.stringify(tradingData));
+    }
+  } catch (e) {}
+
+  // Save to Server API
+  try {
+    await fetch(`/api/user/data/${encodeURIComponent(key)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tradingData, ...metadata }),
+    });
+  } catch (e) {}
+
+  if (checkQuotaStatus()) return;
 
   const docPath = `users/${key}`;
   try {
@@ -300,11 +388,6 @@ export async function saveUserDataToFirestore(
     }
 
     await setDoc(doc(db, "users", key), payload, { merge: true });
-
-    // Local backup
-    try {
-      localStorage.setItem(`sngx_trading_data_${key}`, JSON.stringify(tradingData));
-    } catch (e) {}
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, docPath);
   }
@@ -317,17 +400,30 @@ export async function getUserDataFromFirestore(email: string) {
   const key = cleanEmailKey(email);
   if (!key) return null;
 
-  const docPath = `users/${key}`;
-  try {
-    const docRef = doc(db, "users", key);
-    const docSnap = await getDoc(docRef);
+  if (!checkQuotaStatus()) {
+    const docPath = `users/${key}`;
+    try {
+      const docRef = doc(db, "users", key);
+      const docSnap = await getDoc(docRef);
 
-    if (docSnap.exists()) {
-      return docSnap.data();
+      if (docSnap.exists()) {
+        return docSnap.data();
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.GET, docPath);
     }
-  } catch (error) {
-    handleFirestoreError(error, OperationType.GET, docPath);
   }
+
+  // Try Server API fallback
+  try {
+    const res = await fetch(`/api/user/data/${encodeURIComponent(key)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && (data.tradingData || data.startingCapital)) {
+        return data;
+      }
+    }
+  } catch (e) {}
 
   // Local fallback
   try {
@@ -350,22 +446,44 @@ export function subscribeUserDataFromFirestore(
   const key = cleanEmailKey(email);
   if (!key) return () => {};
 
+  if (checkQuotaStatus()) {
+    // Provide initial data from localStorage
+    try {
+      const local = localStorage.getItem(`sngx_trading_data_${key}`);
+      if (local) {
+        onData({ tradingData: JSON.parse(local) });
+      }
+    } catch (e) {}
+    return () => {};
+  }
+
   const docPath = `users/${key}`;
   const docRef = doc(db, "users", key);
 
-  const unsubscribe = onSnapshot(
-    docRef,
-    (snapshot) => {
-      if (snapshot.exists()) {
-        onData(snapshot.data());
+  try {
+    const unsubscribe = onSnapshot(
+      docRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          onData(snapshot.data());
+        }
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.GET, docPath);
+        try {
+          const local = localStorage.getItem(`sngx_trading_data_${key}`);
+          if (local) {
+            onData({ tradingData: JSON.parse(local) });
+          }
+        } catch (e) {}
       }
-    },
-    (error) => {
-      handleFirestoreError(error, OperationType.GET, docPath);
-    }
-  );
+    );
 
-  return unsubscribe;
+    return unsubscribe;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.GET, docPath);
+    return () => {};
+  }
 }
 
 /**
@@ -376,54 +494,59 @@ export async function fetchAllAdminDataFromFirestore() {
   const preApprovedGmails: string[] = [];
   const logs: AuditLog[] = [];
 
-  // 1. Fetch Users
-  try {
-    const snap = await getDocs(collection(db, "users"));
-    snap.forEach((d) => {
-      const u = d.data();
-      if (u.email) {
-        users.push({
-          id: u.id || "usr_" + d.id,
-          email: u.email,
-          username: u.username || u.email.split("@")[0],
-          role: u.role || "client",
-          status: u.status || "approved",
-          createdAt: u.createdAt || new Date().toISOString(),
-          lastLogin: u.lastLogin,
-        });
-      }
-    });
-  } catch (err) {
-    handleFirestoreError(err, OperationType.LIST, "users");
-  }
-
-  // 2. Fetch Preapproved Emails
-  try {
-    const snap = await getDocs(collection(db, "preApprovedEmails"));
-    snap.forEach((d) => {
-      if (d.data()?.email) {
-        preApprovedGmails.push(d.data().email);
-      } else {
-        preApprovedGmails.push(d.id);
-      }
-    });
-  } catch (err) {
-    handleFirestoreError(err, OperationType.LIST, "preApprovedEmails");
-  }
-
-  // 3. Fetch Audit Logs
-  try {
-    const q = query(collection(db, "logs"), orderBy("timestamp", "desc"), limit(50));
-    const snap = await getDocs(q);
-    snap.forEach((d) => {
-      logs.push(d.data() as AuditLog);
-    });
-  } catch (err) {
-    // If index missing fallback to get all
+  if (!checkQuotaStatus()) {
+    // 1. Fetch Users
     try {
-      const snap = await getDocs(collection(db, "logs"));
-      snap.forEach((d) => logs.push(d.data() as AuditLog));
-    } catch (e) {}
+      const snap = await getDocs(collection(db, "users"));
+      snap.forEach((d) => {
+        const u = d.data();
+        if (u.email) {
+          users.push({
+            id: u.id || "usr_" + d.id,
+            email: u.email,
+            username: u.username || u.email.split("@")[0],
+            role: u.role || "client",
+            status: u.status || "approved",
+            createdAt: u.createdAt || new Date().toISOString(),
+            lastLogin: u.lastLogin,
+          });
+        }
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.LIST, "users");
+    }
+
+    // 2. Fetch Preapproved Emails
+    if (!checkQuotaStatus()) {
+      try {
+        const snap = await getDocs(collection(db, "preApprovedEmails"));
+        snap.forEach((d) => {
+          if (d.data()?.email) {
+            preApprovedGmails.push(d.data().email);
+          } else {
+            preApprovedGmails.push(d.id);
+          }
+        });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.LIST, "preApprovedEmails");
+      }
+    }
+
+    // 3. Fetch Audit Logs
+    if (!checkQuotaStatus()) {
+      try {
+        const q = query(collection(db, "logs"), orderBy("timestamp", "desc"), limit(50));
+        const snap = await getDocs(q);
+        snap.forEach((d) => {
+          logs.push(d.data() as AuditLog);
+        });
+      } catch (err) {
+        try {
+          const snap = await getDocs(collection(db, "logs"));
+          snap.forEach((d) => logs.push(d.data() as AuditLog));
+        } catch (e) {}
+      }
+    }
   }
 
   // Always include master admin email in preapproved list
@@ -441,11 +564,13 @@ export async function grantUserAccessInFirestore(email: string) {
   const cleanEmail = cleanEmailKey(email);
   if (!cleanEmail) return;
 
-  try {
-    await setDoc(doc(db, "users", cleanEmail), { status: "approved" }, { merge: true });
-    await addAuditLogToFirestore(`Access GRANTED for user: ${cleanEmail}`, "success");
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, `users/${cleanEmail}`);
+  if (!checkQuotaStatus()) {
+    try {
+      await setDoc(doc(db, "users", cleanEmail), { status: "approved" }, { merge: true });
+      await addAuditLogToFirestore(`Access GRANTED for user: ${cleanEmail}`, "success");
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `users/${cleanEmail}`);
+    }
   }
 
   // Update local storage
@@ -465,11 +590,13 @@ export async function revokeUserAccessInFirestore(email: string) {
   const cleanEmail = cleanEmailKey(email);
   if (!cleanEmail) return;
 
-  try {
-    await setDoc(doc(db, "users", cleanEmail), { status: "revoked" }, { merge: true });
-    await addAuditLogToFirestore(`Access REVOKED for user: ${cleanEmail}`, "warning");
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, `users/${cleanEmail}`);
+  if (!checkQuotaStatus()) {
+    try {
+      await setDoc(doc(db, "users", cleanEmail), { status: "revoked" }, { merge: true });
+      await addAuditLogToFirestore(`Access REVOKED for user: ${cleanEmail}`, "warning");
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `users/${cleanEmail}`);
+    }
   }
 
   // Update local storage
@@ -489,22 +616,24 @@ export async function preApproveGmailInFirestore(email: string) {
   const cleanEmail = cleanEmailKey(email);
   if (!cleanEmail) return;
 
-  try {
-    await setDoc(doc(db, "preApprovedEmails", cleanEmail), {
-      email: cleanEmail,
-      addedAt: new Date().toISOString(),
-    });
+  if (!checkQuotaStatus()) {
+    try {
+      await setDoc(doc(db, "preApprovedEmails", cleanEmail), {
+        email: cleanEmail,
+        addedAt: new Date().toISOString(),
+      });
 
-    // If user record already exists, update status to approved
-    const userDocRef = doc(db, "users", cleanEmail);
-    const userSnap = await getDoc(userDocRef);
-    if (userSnap.exists()) {
-      await setDoc(userDocRef, { status: "approved" }, { merge: true });
+      // If user record already exists, update status to approved
+      const userDocRef = doc(db, "users", cleanEmail);
+      const userSnap = await getDoc(userDocRef);
+      if (userSnap.exists()) {
+        await setDoc(userDocRef, { status: "approved" }, { merge: true });
+      }
+
+      await addAuditLogToFirestore(`Gmail pre-approved: ${cleanEmail}`, "success");
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `preApprovedEmails/${cleanEmail}`);
     }
-
-    await addAuditLogToFirestore(`Gmail pre-approved: ${cleanEmail}`, "success");
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, `preApprovedEmails/${cleanEmail}`);
   }
 
   // Local storage backup
@@ -524,11 +653,13 @@ export async function removePreApprovedGmailInFirestore(email: string) {
   const cleanEmail = cleanEmailKey(email);
   if (!cleanEmail) return;
 
-  try {
-    await deleteDoc(doc(db, "preApprovedEmails", cleanEmail));
-    await addAuditLogToFirestore(`Pre-approved Gmail removed: ${cleanEmail}`, "warning");
-  } catch (err) {
-    handleFirestoreError(err, OperationType.DELETE, `preApprovedEmails/${cleanEmail}`);
+  if (!checkQuotaStatus()) {
+    try {
+      await deleteDoc(doc(db, "preApprovedEmails", cleanEmail));
+      await addAuditLogToFirestore(`Pre-approved Gmail removed: ${cleanEmail}`, "warning");
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `preApprovedEmails/${cleanEmail}`);
+    }
   }
 
   try {
@@ -545,11 +676,13 @@ export async function deleteUserInFirestore(email: string) {
   const cleanEmail = cleanEmailKey(email);
   if (!cleanEmail) return;
 
-  try {
-    await deleteDoc(doc(db, "users", cleanEmail));
-    await addAuditLogToFirestore(`User account deleted: ${cleanEmail}`, "warning");
-  } catch (err) {
-    handleFirestoreError(err, OperationType.DELETE, `users/${cleanEmail}`);
+  if (!checkQuotaStatus()) {
+    try {
+      await deleteDoc(doc(db, "users", cleanEmail));
+      await addAuditLogToFirestore(`User account deleted: ${cleanEmail}`, "warning");
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `users/${cleanEmail}`);
+    }
   }
 
   try {
@@ -563,16 +696,18 @@ export async function deleteUserInFirestore(email: string) {
  * Approve all pending users in Firestore
  */
 export async function approveAllPendingInFirestore() {
-  try {
-    const snap = await getDocs(collection(db, "users"));
-    snap.forEach(async (d) => {
-      const u = d.data();
-      if (u.status === "pending") {
-        await setDoc(doc(db, "users", d.id), { status: "approved" }, { merge: true });
-      }
-    });
-    await addAuditLogToFirestore("Approved all pending accounts", "success");
-  } catch (err) {
-    handleFirestoreError(err, OperationType.UPDATE, "users");
+  if (!checkQuotaStatus()) {
+    try {
+      const snap = await getDocs(collection(db, "users"));
+      snap.forEach(async (d) => {
+        const u = d.data();
+        if (u.status === "pending") {
+          await setDoc(doc(db, "users", d.id), { status: "approved" }, { merge: true });
+        }
+      });
+      await addAuditLogToFirestore("Approved all pending accounts", "success");
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, "users");
+    }
   }
 }

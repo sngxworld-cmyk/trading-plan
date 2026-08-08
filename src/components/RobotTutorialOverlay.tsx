@@ -80,12 +80,12 @@ export const RobotTutorialOverlay: React.FC<RobotTutorialOverlayProps> = ({
       highlightHint: "Automatic Approval Status Polling",
     },
     {
-      title: "9. 24/7 3D AI Robot Assistant (3D AI උපදේශක)",
-      subtitle: "Bilingual Trading & App Guidance",
+      title: "9. 3D AI Robot Tutorial Mentor (3D AI උපදේශක)",
+      subtitle: "Interactive 3D Walkthrough Guidance",
       icon: Cpu,
       description:
-        "පහළ කෙළවරේ ඇති 3D Robot Mascot එක ක්ලික් කර Sinhala, Singlish, හෝ English වලින් ඕනෑම Trading ප්‍රශ්නයක්, Risk Management උපදෙසක් හෝ App භාවිත උපදෙසක් ලබාගත හැක!",
-      highlightHint: "Floating 3D Robot Mascot (Bottom Right)",
+        "3D AI Robot උපදේශක එක මගින් SNGxJOURNAL Trading Plan App එකෙහි සියලුම විශේෂාංග පිළිබඳ සවිස්තරාත්මක 3D නිබන්ධන මඟපෙන්වීමක් ලබාදේ.",
+      highlightHint: "3D Interactive AI Tutorial Overlay",
     },
   ];
 
@@ -155,12 +155,12 @@ export const RobotTutorialOverlay: React.FC<RobotTutorialOverlayProps> = ({
       highlightHint: "Automatic Approval Status Polling",
     },
     {
-      title: "9. 24/7 3D AI Robot Assistant",
-      subtitle: "Interactive AI Trading Mentor",
+      title: "9. 3D AI Robot Tutorial Mentor",
+      subtitle: "Interactive 3D Walkthrough Guidance",
       icon: Cpu,
       description:
-        "Click the floating 3D Robot Mascot in the bottom right corner anytime to ask trading questions, risk management guidelines, or app instructions in Sinhala, Singlish, or English!",
-      highlightHint: "Floating 3D Robot Mascot (Bottom Right)",
+        "The 3D AI Robot Assistant provides this comprehensive interactive walkthrough tutorial covering all features of your SNGxJOURNAL Trading Plan.",
+      highlightHint: "3D Interactive AI Tutorial Overlay",
     },
   ];
 

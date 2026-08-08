@@ -1,6 +1,6 @@
 import React from "react";
 import { UserProfile } from "../types";
-import { ShieldCheck, UserCheck, Clock, LogOut, LayoutDashboard, Settings } from "lucide-react";
+import { ShieldCheck, UserCheck, Clock, LogOut, LayoutDashboard, Settings, HelpCircle } from "lucide-react";
 
 interface NavbarProps {
   user: UserProfile | null;
@@ -8,6 +8,7 @@ interface NavbarProps {
   setActiveView: (view: "app" | "admin") => void;
   onLogout: () => void;
   onRefreshStatus?: () => void;
+  onReplayTutorial?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -15,6 +16,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeView,
   setActiveView,
   onLogout,
+  onReplayTutorial,
 }) => {
   return (
     <nav className="h-16 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md flex items-center justify-between px-2.5 sm:px-8 shrink-0 z-30 sticky top-0">
@@ -98,9 +100,21 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         )}
 
-        {/* User Gmail badge & logout */}
+        {/* User Gmail badge & tutorial & logout */}
         {user ? (
-          <div className="flex items-center gap-1.5 sm:gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-2.5">
+            {onReplayTutorial && (
+              <button
+                onClick={onReplayTutorial}
+                title="Replay 3D AI Tutorial / 3D නිබන්ධනය බලන්න"
+                className="px-2.5 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/35 text-indigo-300 border border-indigo-500/30 text-xs font-mono flex items-center gap-1.5 transition-colors shrink-0"
+              >
+                <HelpCircle className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">3D Tutorial</span>
+                <span className="sm:hidden">Tutorial</span>
+              </button>
+            )}
+
             <div className="text-right hidden sm:block">
               <p className="text-xs font-semibold text-slate-200 font-mono truncate max-w-[130px] sm:max-w-[160px]">
                 {user.email}

@@ -1,13 +1,11 @@
-import React, { useState, useEffect, useRef } from "react";
-import { UserProfile, TradingDataStore } from "./types";
+import React, { useState, useEffect } from "react";
+import { UserProfile } from "./types";
 import { Navbar } from "./components/Navbar";
 import { GatewayScreen } from "./components/GatewayScreen";
 import { UnderReviewModal } from "./components/UnderReviewModal";
 import { HostAdminPortal } from "./components/HostAdminPortal";
 import { TradingApp } from "./components/TradingApp";
-import { Robot3D } from "./components/Robot3D";
 import { RobotTutorialOverlay } from "./components/RobotTutorialOverlay";
-import { Sparkles, X, Send, HelpCircle, RefreshCw } from "lucide-react";
 
 export default function App() {
   // Active User session
@@ -16,20 +14,6 @@ export default function App() {
 
   // Tutorial overlay state
   const [showTutorial, setShowTutorial] = useState(false);
-
-  // AI Chatbot State
-  const [isBotOpen, setIsBotOpen] = useState(false);
-  const [botMessages, setBotMessages] = useState<
-    { sender: "bot" | "user"; text: string }[]
-  >([
-    {
-      sender: "bot",
-      text: "ආයුබෝවන්! Hello! SNGxJOURNAL 3D AI Assistant is active. Ask me anything about your trade journal, risk management, or app features in Sinhala, Singlish, or English!",
-    },
-  ]);
-  const [botInput, setBotInput] = useState("");
-  const [isBotThinking, setIsBotThinking] = useState(false);
-  const chatBottomRef = useRef<HTMLDivElement>(null);
 
   // Clear persistent session tokens on startup so user enters gateway screen fresh
   useEffect(() => {
@@ -57,10 +41,9 @@ export default function App() {
     setShowTutorial(false);
   };
 
-  // Replay Tutorial manually from Bot
+  // Replay Tutorial
   const handleReplayTutorial = () => {
     setShowTutorial(true);
-    setIsBotOpen(false);
   };
 
   // Refresh review status from local state & server
@@ -113,51 +96,6 @@ export default function App() {
     setActiveView("app");
   };
 
-  // Chatbot Send Message
-  const handleSendBotMessage = async (textToSend?: string) => {
-    const text = textToSend || botInput.trim();
-    if (!text) return;
-
-    setBotMessages((prev) => [...prev, { sender: "user", text }]);
-    if (!textToSend) setBotInput("");
-    setIsBotThinking(true);
-
-    try {
-      const res = await fetch("/api/ai/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: text,
-          history: botMessages.slice(-6),
-        }),
-      });
-      const data = await res.json();
-      setBotMessages((prev) => [
-        ...prev,
-        { sender: "bot", text: data.reply || "SNGxJOURNAL 3D AI Assistant online." },
-      ]);
-    } catch (err) {
-      const isSinhala = /[\u0D80-\u0DFF]/.test(text);
-      let reply = "SNGxJOURNAL 3D AI Assistant online. Ask me about your trade logs, starting capital, Excel export, or risk management!";
-      if (isSinhala) {
-        reply = "SNGxJOURNAL 3D AI සහායක සම්බන්ධ විය. ඔබගේ Trading Journal, Excel Export, හෝ Risk Rules පිළිබඳව ඕනෑම දෙයක් අසන්න!";
-      } else if (text.toLowerCase().includes("hi") || text.toLowerCase().includes("hello") || text.toLowerCase().includes("wassup") || text.toLowerCase().includes("sup")) {
-        reply = "Hello! SNGxJOURNAL 3D AI Assistant ready. How can I help with your trade journal or risk management today?";
-      } else if (text.toLowerCase().includes("excel") || text.toLowerCase().includes("export")) {
-        reply = "To export your trade logs to Excel: Click the green 'Excel Export Sheet' button at the top right header!";
-      }
-      setBotMessages((prev) => [
-        ...prev,
-        { sender: "bot", text: reply },
-      ]);
-    } finally {
-      setIsBotThinking(false);
-      setTimeout(() => {
-        chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
-      }, 100);
-    }
-  };
-
   // 1. If user is not logged in -> Show Gateway Screen
   if (!currentUser) {
     return (
@@ -178,18 +116,12 @@ export default function App() {
           setActiveView={setActiveView}
           onLogout={handleLogout}
           onRefreshStatus={handleRefreshStatus}
+          onReplayTutorial={handleReplayTutorial}
         />
         <HostAdminPortal onReturnToApp={() => setActiveView("app")} />
       </div>
     );
   }
-
-  // Quick suggestion chips
-  const quickSuggestions = [
-    { label: "ලොගින් අනුමැතිය ලබාගන්නේ කෙසේද?", query: "ලොගින් අනුමැතිය ලබාගන්නේ කෙසේද?" },
-    { label: "Excel Export කරන්නේ කෙසේද?", query: "Excel Export කරන්නේ කෙසේද?" },
-    { label: "Trading Risk Management උපදෙස්", query: "Give me key trading risk management rules." },
-  ];
 
   // 3. Render Primary Application with TradingApp
   return (
@@ -209,6 +141,7 @@ export default function App() {
         setActiveView={setActiveView}
         onLogout={handleLogout}
         onRefreshStatus={handleRefreshStatus}
+        onReplayTutorial={handleReplayTutorial}
       />
 
       {/* Main Content Area */}
@@ -237,129 +170,6 @@ export default function App() {
           />
         </main>
       </div>
-
-      {/* Floating 3D Robot Mascot Trigger Button (Bottom Right) */}
-      {!isBotOpen && (
-        <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end gap-1.5 animate-in zoom-in-90 duration-300">
-          <div
-            onClick={() => setIsBotOpen(true)}
-            className="relative group cursor-pointer"
-            title="Open SNGxJOURNAL 3D AI Assistant"
-          >
-            {/* Pulsing ambient glow ring behind 3D Robot */}
-            <div className="absolute inset-0 bg-indigo-500/30 rounded-full blur-xl group-hover:scale-125 transition-transform duration-300 animate-pulse" />
-            
-            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-slate-900/90 border border-indigo-500/50 rounded-full shadow-2xl shadow-indigo-600/40 flex items-center justify-center relative overflow-hidden backdrop-blur-md group-hover:border-indigo-400 group-hover:scale-105 transition-all">
-              <Robot3D size={80} isTalking={isBotThinking} className="pointer-events-none" />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* AI Assistant Chat Window */}
-      {isBotOpen && (
-        <div className="fixed bottom-4 right-4 sm:right-6 z-50 w-[calc(100vw-32px)] sm:w-96 h-[480px] bg-slate-900/95 border border-indigo-500/40 rounded-3xl shadow-2xl flex flex-col overflow-hidden backdrop-blur-2xl animate-in fade-in slide-in-from-bottom-4 duration-200">
-          {/* Header */}
-          <div className="p-3.5 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-full bg-slate-900 border border-indigo-500/40 overflow-hidden flex items-center justify-center">
-                <Robot3D size={42} />
-              </div>
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  <span className="text-xs font-bold text-white tracking-wide">
-                    SNGxJOURNAL 3D AI Assistant
-                  </span>
-                </div>
-                <p className="text-[10px] text-slate-400 font-mono">
-                  Sinhala & English Trading Mentor
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1">
-              <button
-                onClick={handleReplayTutorial}
-                title="Replay 3D Tutorial / නිබන්ධනය පෙන්වන්න"
-                className="px-2 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 text-[10px] font-mono border border-indigo-500/30 flex items-center gap-1 transition-colors"
-              >
-                <HelpCircle className="w-3 h-3" />
-                <span>Tutorial</span>
-              </button>
-              <button
-                onClick={() => setIsBotOpen(false)}
-                className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Quick Suggestions Bar */}
-          <div className="px-3 py-2 bg-slate-950/60 border-b border-slate-800/80 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-            {quickSuggestions.map((s, idx) => (
-              <button
-                key={idx}
-                onClick={() => handleSendBotMessage(s.query)}
-                className="text-[10px] font-sans whitespace-nowrap bg-slate-800/80 hover:bg-indigo-900/60 text-indigo-200 border border-indigo-500/20 px-2.5 py-1 rounded-full transition-all active:scale-95"
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Messages */}
-          <div className="flex-1 p-3.5 overflow-y-auto space-y-3 font-sans text-xs">
-            {botMessages.map((msg, i) => (
-              <div
-                key={i}
-                className={`flex ${
-                  msg.sender === "user" ? "justify-end" : "justify-start"
-                }`}
-              >
-                <div
-                  className={`max-w-[85%] p-3 rounded-2xl leading-relaxed whitespace-pre-wrap ${
-                    msg.sender === "user"
-                      ? "bg-indigo-600 text-white rounded-br-none shadow-md"
-                      : "bg-slate-800 text-slate-100 rounded-bl-none border border-slate-700/60 shadow-inner"
-                  }`}
-                >
-                  {msg.text}
-                </div>
-              </div>
-            ))}
-            {isBotThinking && (
-              <div className="flex justify-start">
-                <div className="bg-slate-800 text-slate-300 p-3 rounded-2xl rounded-bl-none text-xs flex items-center gap-2 border border-slate-700/60">
-                  <Sparkles className="w-3.5 h-3.5 animate-spin text-indigo-400" />
-                  <span>3D AI Mentor is thinking...</span>
-                </div>
-              </div>
-            )}
-            <div ref={chatBottomRef} />
-          </div>
-
-          {/* Input Box */}
-          <div className="p-2.5 bg-slate-950 border-t border-slate-800 flex items-center gap-2">
-            <input
-              type="text"
-              value={botInput}
-              onChange={(e) => setBotInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSendBotMessage()}
-              placeholder="Ask in English or Sinhala (සිංහල)..."
-              className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-            />
-            <button
-              onClick={() => handleSendBotMessage()}
-              disabled={isBotThinking}
-              className="p-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
-            >
-              <Send className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
