@@ -358,7 +358,13 @@ export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer
       alert("No trading records found to export.");
       return;
     }
-    exportTradingPlanToExcel(dataStore, yearRange, user.email, 0);
+    exportTradingPlanToExcel(
+      dataStore,
+      yearRange,
+      user.email,
+      startMonth,
+      parseFloat(startingCapital) || 100
+    );
   };
 
   const handleReset = () => {
@@ -385,8 +391,6 @@ export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer
           </h1>
           <p className="text-xs text-slate-400 mt-1 flex items-center gap-2 flex-wrap">
             <span>Client Gmail: <strong className="text-indigo-400 font-mono">{user.email}</strong></span>
-            <span className="text-slate-600">•</span>
-            <span>Strategy: <span className="text-slate-300 font-semibold">SMC / Order Block Matrix</span></span>
           </p>
         </div>
 
