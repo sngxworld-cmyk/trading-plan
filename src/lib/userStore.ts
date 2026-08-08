@@ -273,7 +273,7 @@ export async function loginUserInFirestore(
 export async function saveUserDataToFirestore(
   email: string,
   tradingData: TradingDataStore,
-  metadata?: { yearRange?: string; startMonth?: number }
+  metadata?: { yearRange?: string; startMonth?: number; startingCapital?: string }
 ) {
   const key = cleanEmailKey(email);
   if (!key) return;
@@ -294,6 +294,9 @@ export async function saveUserDataToFirestore(
     }
     if (metadata?.startMonth !== undefined) {
       payload.startMonth = metadata.startMonth;
+    }
+    if (metadata?.startingCapital !== undefined) {
+      payload.startingCapital = metadata.startingCapital;
     }
 
     await setDoc(doc(db, "users", key), payload, { merge: true });

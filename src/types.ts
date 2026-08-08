@@ -19,6 +19,7 @@ export interface DayRecord {
   amount: string;
   roi: string;
   notes?: string;
+  description?: string;
 }
 
 export interface MonthData {
@@ -36,6 +37,7 @@ export interface TradingDataStore {
 export interface AppMetadata {
   yearRange: string;
   startMonth: number;
+  startingCapital?: string;
 }
 
 export interface AdminUserRecord {
