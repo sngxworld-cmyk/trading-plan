@@ -137,12 +137,18 @@ export default function App() {
         { sender: "bot", text: data.reply || "SNGxJOURNAL 3D AI Assistant online." },
       ]);
     } catch (err) {
+      const isSinhala = /[\u0D80-\u0DFF]/.test(text);
+      let reply = "SNGxJOURNAL 3D AI Assistant online. Ask me about your trade logs, starting capital, Excel export, or risk management!";
+      if (isSinhala) {
+        reply = "SNGxJOURNAL 3D AI සහායක සම්බන්ධ විය. ඔබගේ Trading Journal, Excel Export, හෝ Risk Rules පිළිබඳව ඕනෑම දෙයක් අසන්න!";
+      } else if (text.toLowerCase().includes("hi") || text.toLowerCase().includes("hello") || text.toLowerCase().includes("wassup") || text.toLowerCase().includes("sup")) {
+        reply = "Hello! SNGxJOURNAL 3D AI Assistant ready. How can I help with your trade journal or risk management today?";
+      } else if (text.toLowerCase().includes("excel") || text.toLowerCase().includes("export")) {
+        reply = "To export your trade logs to Excel: Click the green 'Excel Export Sheet' button at the top right header!";
+      }
       setBotMessages((prev) => [
         ...prev,
-        {
-          sender: "bot",
-          text: "SNGxJOURNAL 3D AI Assistant active. For access assistance, contact host line: +94 75 284 0841.",
-        },
+        { sender: "bot", text: reply },
       ]);
     } finally {
       setIsBotThinking(false);

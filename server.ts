@@ -761,6 +761,113 @@ async function startServer() {
     }
   });
 
+// Helper to generate dynamic tailored responses when LLM or API Key is unavailable
+function generateDynamicResponse(message: string): string {
+  const query = message.trim().toLowerCase();
+  const isPureSinhala = /[\u0D80-\u0DFF]/.test(message);
+  const isSinglish =
+    query.includes("kohomada") ||
+    query.includes("wenne") ||
+    query.includes("karanne") ||
+    query.includes("ekata") ||
+    query.includes("poddak") ||
+    query.includes("machan") ||
+    query.includes("bro") ||
+    query.includes("hari");
+
+  // Greetings
+  if (
+    query === "hi" ||
+    query === "hello" ||
+    query === "hey" ||
+    query.includes("wassup") ||
+    query.includes("wwassupo") ||
+    query === "sup" ||
+    query === "ආයුබෝවන්"
+  ) {
+    if (isPureSinhala) {
+      return "ආයුබෝවන්! SNGxJOURNAL 3D AI උපදේශක වෙත සාදරයෙන් පිළිගනිමු. ඔබගේ Trading Journal, Excel Export, හෝ Risk Management පිළිබඳ ඕනෑම ගැටළුවක් විමසන්න!";
+    }
+    if (isSinglish) {
+      return "Hari machan! SNGxJOURNAL 3D AI Mentor online. Oyage trade journal eka, PnL logs, nathnam Risk Management gana oni deyak ahanna!";
+    }
+    return "Hello! Welcome to SNGxJOURNAL 3D AI Mentor. I am ready to help you with your trade logs, starting capital, Excel reports, and risk management strategies. How can I assist your trading today?";
+  }
+
+  // Excel / Export questions
+  if (
+    query.includes("excel") ||
+    query.includes("export") ||
+    query.includes("download") ||
+    query.includes("බාගත") ||
+    query.includes("sheet")
+  ) {
+    if (isPureSinhala) {
+      return "Excel Report ලබා ගැනීමට: Header එකේ ඇති 'Excel Export Sheet' (කොළ පාට) බොත්තම ඔබන්න. ඔබගේ මාසික PnL, Win Rate %, සහ දිනපතා Trades සියල්ල .xlsx ගොනුවක් ලෙස Download වේ.";
+    }
+    if (isSinglish) {
+      return "Excel file eka ganna top header eke tiyena green 'Excel Export Sheet' button eka click karanna. Oyage full year PnL & trade logs okkoma .xlsx vidihata download wenawa!";
+    }
+    return "To export your trading journal: Click the green 'Excel Export Sheet' button at the top header. This downloads a complete .xlsx spreadsheet containing your Account Overview, Monthly Breakdown, and Daily Trade Logs.";
+  }
+
+  // Login / Approval questions
+  if (
+    query.includes("login") ||
+    query.includes("approve") ||
+    query.includes("approval") ||
+    query.includes("review") ||
+    query.includes("අනුමැතිය") ||
+    query.includes("access")
+  ) {
+    if (isPureSinhala) {
+      return "ගිණුම් අනුමැතිය සඳහා: ඔබගේ Gmail එක ඇතුළත් කර Register වන්න. Host Admin සජීවීව පරීක්ෂා කර අනුමත කළ සැනින් App එක දිගහැරේ. හදිසි සහාය සඳහා Host Hotline: +94 75 284 0841.";
+    }
+    if (isSinglish) {
+      return "Login/Approval gana: Oyage Gmail register kalama Host Admin dwara approve wenakan 'Under Review' innawa. Instant approve kara ganna call/WhatsApp host: +94 75 284 0841.";
+    }
+    return "For account access approval: Register your Gmail address on the Gateway screen. Once Host Admin approves your email, the app unlocks automatically. For immediate approval support, contact hotline: +94 75 284 0841.";
+  }
+
+  // Capital / Deposit questions
+  if (
+    query.includes("capital") ||
+    query.includes("deposit") ||
+    query.includes("starting") ||
+    query.includes("balance") ||
+    query.includes("මුදල")
+  ) {
+    if (isPureSinhala) {
+      return "Starting Capital සකස් කිරීමට: Dashboard එකේ ඇති Starting Capital Input එකේ ඔබගේ ආරම්භක ඩිපොසිට් එක ($100, $500, $1000 ආදී) යොදන්න. එය මත සමස්ත Account Equity & ROI ගණනය වේ.";
+    }
+    return "To set your Starting Capital: Enter your initial deposit ($100, $500, $1000, etc.) in the Starting Capital box or click quick presets. Your YTD PnL, ROI %, and visual equity curves update relative to this amount.";
+  }
+
+  // Risk management / strategy questions
+  if (
+    query.includes("risk") ||
+    query.includes("strategy") ||
+    query.includes("rule") ||
+    query.includes("pnl") ||
+    query.includes("loss") ||
+    query.includes("trade")
+  ) {
+    if (isPureSinhala) {
+      return "Trading Risk Rules:\n1. එක් trade එකකට account එකෙන් 1%-2% කට වඩා risk නොකරන්න.\n2. Stop-loss අනිවාර්යයෙන් තබන්න.\n3. Minimum 1:2 Risk to Reward ratio පවත්වා ගන්න.\n4. Over-trading වලින් වළකින්න.";
+    }
+    return "Key Risk Management Rules:\n1. Never risk more than 1-2% of your account per trade.\n2. Always use a hard Stop-Loss.\n3. Maintain a minimum Risk:Reward ratio of 1:2.\n4. Avoid revenge trading or over-leveraging after a loss day.";
+  }
+
+  // Default response
+  if (isPureSinhala) {
+    return "SNGxJOURNAL 3D AI උපදේශක සක්‍රීයයි. ඔබගේ Starting Capital, Daily Win/Loss Logs, Analytics, Excel Export, හෝ Risk Rules පිළිබඳව ඕනෑම දෙයක් අසන්න! සහාය: +94 75 284 0841.";
+  }
+  if (isSinglish) {
+    return "SNGxJOURNAL 3D AI Assistant active. Trade journal eke PnL, Excel Export, Starting Capital, nathnam Risk Management gana oni deyak ahanna! Support: +94 75 284 0841.";
+  }
+  return "SNGxJOURNAL 3D AI Mentor is active and trained on your trading journal! Ask me about logging daily win/losses, starting capital setup, visual analytics, Excel export, or risk management rules.";
+}
+
   // AI CHATBOT ROUTE (Gemini API with English, Sinhala & Singlish support)
   app.post("/api/ai/chat", async (req, res) => {
     const { message, history } = req.body;
@@ -772,18 +879,7 @@ async function startServer() {
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
-      // Intelligent fallback response generator if API key is not set
-      const query = message.toLowerCase();
-      const isPureSinhala = /[\u0D80-\u0DFF]/.test(message);
-      const isSinglish = query.includes("kohomada") || query.includes("wenne") || query.includes("poddak") || query.includes("login") || query.includes("karanna");
-
-      let reply = "SNGxJOURNAL AI Assistant Active. To access the 1-Year Strategic Trading Plan, register your Gmail and wait for Host Admin approval. For immediate assistance, contact +94 75 284 0841.";
-      if (isPureSinhala) {
-        reply = "ඔබගේ Gmail ගිණුම ලියාපදිංචි කළ පසු Host Admin විසින් අනුමත කරනු ඇත. අනුමැතිය ලැබුණු පසු Charts සහ 1-Year Trading Plan සක්‍රීය වේ. සහාය සඳහා: +94 75 284 0841.";
-      } else if (isSinglish) {
-        reply = "Oyage Gmail eka register kalama Host Admin approve karanakan 'Under Review' tiyenawa. Approve unama Trading Plan and Charts access hambawenawa. Support call: +94 75 284 0841.";
-      }
-
+      const reply = generateDynamicResponse(message);
       return res.json({ reply });
     }
 
@@ -797,9 +893,14 @@ async function startServer() {
         },
       });
 
-      const historyContext = Array.isArray(history) && history.length > 0
-        ? `Previous conversation history:\n` + history.map((h: any) => `${h.sender === "user" ? "User" : "Assistant"}: ${h.text}`).join("\n") + "\n\n"
-        : "";
+      const historyContext =
+        Array.isArray(history) && history.length > 0
+          ? `Previous conversation history:\n` +
+            history
+              .map((h: any) => `${h.sender === "user" ? "User" : "Assistant"}: ${h.text}`)
+              .join("\n") +
+            "\n\n"
+          : "";
 
       const systemContext = `You are the core SNGxJOURNAL 3D AI Assistant & Trading Mentor engine, fully trained on every feature, calculation, and workflow of the SNGxJOURNAL 1-Year Strategic Trading Plan app.
 
@@ -833,28 +934,26 @@ Provide a concise, helpful, friendly, and expert response based on the above tra
         });
         replyText = response.text || "";
       } catch (mErr) {
-        console.warn("Primary model call error:", mErr);
+        console.warn("Primary model call error, trying fallback model:", mErr);
+        try {
+          const fallbackResponse = await ai.models.generateContent({
+            model: "gemini-flash-latest",
+            contents: prompt,
+          });
+          replyText = fallbackResponse.text || "";
+        } catch (fErr) {
+          console.warn("Fallback model call error:", fErr);
+        }
       }
 
       if (!replyText) {
-        replyText = "SNGxJOURNAL AI Assistant Engine active. Ask me anything about your trade logs, risk management, or Excel export.";
+        replyText = generateDynamicResponse(message);
       }
 
       return res.json({ reply: replyText });
     } catch (err: any) {
       console.error("Gemini AI error:", err);
-
-      const query = message.toLowerCase();
-      const isPureSinhala = /[\u0D80-\u0DFF]/.test(message);
-      const isSinglish = query.includes("kohomada") || query.includes("wenne") || query.includes("login") || query.includes("karanna");
-
-      let fallbackReply = "SNGxJOURNAL AI Assistant active. For immediate access approval or trading support, call host hotline +94 75 284 0841.";
-      if (isPureSinhala) {
-        fallbackReply = "SNGxJOURNAL AI සහායක සක්‍රීයයි. ප්‍රවේශය සඳහා ඔබගේ Gmail සටහන් කර Host Admin අනුමැතිය ලබාගන්න. හදිසි සහාය: +94 75 284 0841.";
-      } else if (isSinglish) {
-        fallbackReply = "SNGxJOURNAL AI Assistant connected. Oyage Gmail Host Admin dwara approve kara ganna hotline ekata call karanna: +94 75 284 0841.";
-      }
-
+      const fallbackReply = generateDynamicResponse(message);
       return res.json({ reply: fallbackReply });
     }
   });
