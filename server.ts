@@ -801,23 +801,45 @@ async function startServer() {
         ? `Previous conversation history:\n` + history.map((h: any) => `${h.sender === "user" ? "User" : "Assistant"}: ${h.text}`).join("\n") + "\n\n"
         : "";
 
-      const prompt = `You are the SNGxJOURNAL AI Assistant & Trading Mentor for the 1-Year Strategic Trading Plan web application.
-${historyContext}The user asks: "${message}".
+      const systemContext = `You are the core SNGxJOURNAL 3D AI Assistant & Trading Mentor engine, fully trained on every feature, calculation, and workflow of the SNGxJOURNAL 1-Year Strategic Trading Plan app.
 
-Instructions:
-- Provide clear, expert, concise trading guidance, risk management tips, technical analysis insights, or app navigation assistance.
-- If the user writes in Sinhala (සිංහල), respond in fluent, clear Sinhala.
-- If the user writes in Singlish (e.g. "kohomada log wenne", "plan eka setup karanne kohomada"), respond in friendly, helpful Singlish.
-- If the user asks about login or access approval, explain that after registering their Gmail, the Host Admin receives their request and grants access via the Host Admin Portal.
-- Keep responses direct, well-structured, professional, and under 3-4 paragraphs.
-- Official Support Contact: +94 75 284 0841.`;
+APP ENGINE & JOURNAL KNOWLEDGE DATASET:
+1. STARTING CAPITAL: Users configure their initial trading deposit (e.g. $100, $500, $1000, $5000 or custom). All cumulative year-to-date (YTD) PnL, monthly ROI %, and total account equity are calculated dynamically relative to this baseline.
+2. DAILY PnL LOGGING: Users mark daily trading outcomes as + (Win Day) or - (Loss Day). They enter exact net Profit/Loss ($), ROI (%), and setup strategy notes (e.g., BTC OB retest, Breakout TP hit, Risk:Reward ratio).
+3. RESPONSIVE DESIGN: Optimized for both mobile devices (Touch-friendly card layout) and desktop screens (Full interactive data table grid with popover controls).
+4. MONTHLY & YEARLY SUMMARIES: Provides a breakdown of total win days, loss days, win rate percentage, profit factor, best win day, worst loss day, and monthly ROI performance.
+5. VISUAL ANALYTICS & CHARTS: Powered by Recharts with interactive Equity Growth Curves, Win/Loss Ratio Pie Charts, Daily PnL Distribution Bars, and Consecutive Win/Loss Streak tracking.
+6. FULL EXCEL EXPORT: Users can export their complete trading journal at any time into a formatted .xlsx file featuring Account Overview, Monthly Summary, and Daily Logs (including Month's Profit Till That Day & YTD PnL).
+7. MULTI-YEAR & START MONTH FLEXIBILITY: Supports trading years from 2024 to 2035 with customizable 12-month rolling start months.
+8. GMAIL ACCESS & HOST ADMIN APPROVAL: User accounts register via Gmail. Pending accounts auto-poll access status every 3 seconds until approved by the Host Admin (sngxworld@gmail.com).
+9. RISK MANAGEMENT MENTORSHIP: Always advise traders to maintain strict risk management (1-2% account risk per trade, stop-loss adherence, minimum 1:2 risk-reward ratio, avoiding over-trading or emotional revenge trading).
+10. BILINGUAL SUPPORT:
+    - Respond in fluent, clean Sinhala (සිංහල) if the user asks in Sinhala.
+    - Respond in natural, friendly Singlish if the user asks in Singlish (e.g., "kohomada log wenne", "excel file eka gannne kohomada").
+    - Respond in professional English if the user asks in English.
+    - Official Host Support Hotline: +94 75 284 0841.`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
-        contents: prompt,
-      });
+      const prompt = `${systemContext}
 
-      const replyText = response.text || "Assistant response ready.";
+${historyContext}User question: "${message}"
+
+Provide a concise, helpful, friendly, and expert response based on the above trade journal engine dataset:`;
+
+      let replyText = "";
+      try {
+        const response = await ai.models.generateContent({
+          model: "gemini-3.6-flash",
+          contents: prompt,
+        });
+        replyText = response.text || "";
+      } catch (mErr) {
+        console.warn("Primary model call error:", mErr);
+      }
+
+      if (!replyText) {
+        replyText = "SNGxJOURNAL AI Assistant Engine active. Ask me anything about your trade logs, risk management, or Excel export.";
+      }
+
       return res.json({ reply: replyText });
     } catch (err: any) {
       console.error("Gemini AI error:", err);
