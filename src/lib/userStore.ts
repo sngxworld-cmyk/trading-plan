@@ -11,7 +11,7 @@ import {
   limit,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { TradingDataStore, User, UserStatus, AdminUserRecord, AuditLog } from "../types";
+import { TradingDataStore, User, UserProfile, UserStatus, AdminUserRecord, AuditLog } from "../types";
 
 export enum OperationType {
   CREATE = "create",
@@ -110,6 +110,11 @@ export async function registerUserInFirestore(params: {
   email: string;
   username: string;
   password?: string;
+  displayName?: string;
+  photoURL?: string;
+  phone?: string;
+  bio?: string;
+  tradingPair?: string;
 }): Promise<User> {
   const cleanEmail = cleanEmailKey(params.email);
   if (!cleanEmail) throw new Error("Email address is required.");
@@ -151,6 +156,11 @@ export async function registerUserInFirestore(params: {
     id: "usr_" + Date.now(),
     email: cleanEmail,
     username: params.username.trim(),
+    displayName: params.displayName?.trim() || params.username.trim(),
+    photoURL: params.photoURL || "",
+    phone: params.phone?.trim() || "",
+    bio: params.bio?.trim() || "",
+    tradingPair: params.tradingPair?.trim() || "BTC/USDT",
     role,
     status,
     createdAt: new Date().toISOString(),
@@ -192,6 +202,80 @@ export async function registerUserInFirestore(params: {
   } catch (e) {}
 
   return newUser;
+}
+
+/**
+ * Update user profile details in Firestore /users/{cleanEmail}
+ */
+export async function updateUserProfileInFirestore(
+  email: string,
+  updates: Partial<UserProfile>
+): Promise<User> {
+  const cleanEmail = cleanEmailKey(email);
+  if (!cleanEmail) throw new Error("Email address is required.");
+
+  const docPath = `users/${cleanEmail}`;
+  const localUsers: any[] = JSON.parse(localStorage.getItem("sngx_local_users") || "[]");
+  const existingLocalIndex = localUsers.findIndex(
+    (u) => u.email && u.email.trim().toLowerCase() === cleanEmail
+  );
+
+  let currentUserData: any = existingLocalIndex !== -1 ? localUsers[existingLocalIndex] : {};
+
+  if (!checkQuotaStatus()) {
+    try {
+      const snap = await getDoc(doc(db, "users", cleanEmail));
+      if (snap.exists()) {
+        currentUserData = { ...currentUserData, ...snap.data() };
+      }
+    } catch (e) {
+      handleFirestoreError(e, OperationType.GET, docPath);
+    }
+  }
+
+  const updatedRecord = {
+    ...currentUserData,
+    ...updates,
+    email: cleanEmail,
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (!checkQuotaStatus()) {
+    try {
+      await setDoc(doc(db, "users", cleanEmail), updatedRecord, { merge: true });
+      await addAuditLogToFirestore(`User profile updated for: ${cleanEmail}`, "info");
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, docPath);
+    }
+  }
+
+  // Update local backup
+  try {
+    if (existingLocalIndex !== -1) {
+      localUsers[existingLocalIndex] = updatedRecord;
+    } else {
+      localUsers.push(updatedRecord);
+    }
+    localStorage.setItem("sngx_local_users", JSON.stringify(localUsers));
+  } catch (e) {}
+
+  const updatedUser: User = {
+    id: updatedRecord.id || "usr_" + Date.now(),
+    email: cleanEmail,
+    username: updatedRecord.username || cleanEmail.split("@")[0],
+    displayName: updatedRecord.displayName || updatedRecord.username || cleanEmail.split("@")[0],
+    photoURL: updatedRecord.photoURL || "",
+    phone: updatedRecord.phone || "",
+    bio: updatedRecord.bio || "",
+    tradingPair: updatedRecord.tradingPair || "BTC/USDT",
+    role: updatedRecord.role || "client",
+    status: updatedRecord.status || "approved",
+    createdAt: updatedRecord.createdAt,
+    lastLogin: updatedRecord.lastLogin || new Date().toISOString(),
+    tradingData: updatedRecord.tradingData || null,
+  };
+
+  return updatedUser;
 }
 
 /**
@@ -310,6 +394,12 @@ export async function loginUserInFirestore(
     id: matchedData.id || "usr_" + Date.now(),
     email: matchedData.email,
     username: matchedData.username,
+    displayName: matchedData.displayName || matchedData.username,
+    photoURL: matchedData.photoURL || "",
+    phone: matchedData.phone || "",
+    bio: matchedData.bio || "",
+    tradingPair: matchedData.tradingPair || "BTC/USDT",
+    startingCapital: matchedData.startingCapital || "",
     role: matchedData.role || "client",
     status: matchedData.status || "pending",
     createdAt: matchedData.createdAt,

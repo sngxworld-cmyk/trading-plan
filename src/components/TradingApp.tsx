@@ -9,6 +9,7 @@ import { saveUserDataToFirestore, subscribeUserDataFromFirestore } from "../lib/
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler, BarElement } from "chart.js";
 import { Line, Bar } from "react-chartjs-2";
 import { exportTradingPlanToExcel } from "../utils/excelExport";
+import { TradingPlanInspector } from "./TradingPlanInspector";
 import {
   Download,
   FileSpreadsheet,
@@ -61,7 +62,7 @@ const MONTH_NAMES = [
 const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer }) => {
-  const [activeTab, setActiveTab] = useState<"grid" | "summary" | "goal">("grid");
+  const [activeTab, setActiveTab] = useState<"grid" | "summary" | "goal" | "inspector">("grid");
   const [summarySubTab, setSummarySubTab] = useState<"monthly" | "yearly" | "overall">("monthly");
   
   const [yearRange, setYearRange] = useState("2026");
@@ -516,6 +517,17 @@ export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer
           }`}
         >
           <Target className="w-4 h-4" /> Trading Goal
+        </button>
+
+        <button
+          onClick={() => setActiveTab("inspector")}
+          className={`flex items-center gap-2 px-4 sm:px-6 py-3 rounded-t-xl font-bold text-xs sm:text-sm transition-all border-t border-x shrink-0 whitespace-nowrap ${
+            activeTab === "inspector"
+              ? "bg-slate-900 border-slate-800 text-indigo-400 border-b-2 border-b-indigo-500 shadow-xl"
+              : "bg-slate-950 border-transparent text-slate-500 hover:text-slate-300"
+          }`}
+        >
+          <Activity className="w-4 h-4 text-emerald-400" /> Trading Plan Inspector
         </button>
       </div>
 
@@ -1398,6 +1410,15 @@ export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer
             </div>
           </div>
         </div>
+      )}
+
+      {/* PANEL 4: TRADING PLAN INSPECTOR */}
+      {activeTab === "inspector" && (
+        <TradingPlanInspector
+          user={user}
+          dataStore={dataStore}
+          startingCapital={startingCapital}
+        />
       )}
     </div>
   );

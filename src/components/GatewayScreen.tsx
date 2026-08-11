@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
-import { createChart, CandlestickSeries, IChartApi, ISeriesApi } from "lightweight-charts";
-import { Eye, EyeOff, Lock, Mail, User, ShieldCheck, Flame, TrendingUp, PhoneCall, ArrowRight, KeyRound } from "lucide-react";
+import { createChart, CandlestickSeries, IChartApi, ISeriesApi, UTCTimestamp } from "lightweight-charts";
+import { Eye, EyeOff, Lock, Mail, User, ShieldCheck, Flame, TrendingUp, PhoneCall, ArrowRight, KeyRound, Camera, Phone, Tag } from "lucide-react";
 import { UserProfile } from "../types";
 import { registerUserInFirestore, loginUserInFirestore } from "../lib/userStore";
 
@@ -17,10 +17,68 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [photoURL, setPhotoURL] = useState("");
+  const [phone, setPhone] = useState("");
+  const [bio, setBio] = useState("");
+  const [tradingPair, setTradingPair] = useState("BTC/USDT");
+
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const regFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Handle Photo Upload during Registration
+  const handleRegPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setErrorMessage("Please select a valid image file.");
+      return;
+    }
+
+    if (file.size > 8 * 1024 * 1024) {
+      setErrorMessage("Image file must be under 8MB.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX_WIDTH = 250;
+        const MAX_HEIGHT = 250;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          setPhotoURL(canvas.toDataURL("image/jpeg", 0.85));
+        }
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Asset selection & Live Tickers
   const [selectedAsset, setSelectedAsset] = useState<"BTC" | "ETH" | "SOL">("BTC");
@@ -82,11 +140,15 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
       chartRef.current = null;
     }
 
-    const chart = createChart(chartContainerRef.current, {
+    const container = chartContainerRef.current;
+    const chart = createChart(container, {
+      width: container.clientWidth || 320,
+      height: container.clientHeight || 224,
       layout: {
         background: { color: "#0f172a" },
         textColor: "#94a3b8",
-      },
+        attributionLogo: false,
+      } as any,
       grid: {
         vertLines: { color: "#1e293b" },
         horzLines: { color: "#1e293b" },
@@ -122,7 +184,7 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
 
         if (result.success && Array.isArray(result.data) && result.data.length > 0) {
           historyData = result.data.map((item: any) => ({
-            time: Math.floor(item[0] / 1000),
+            time: Math.floor(item[0] / 1000) as UTCTimestamp,
             open: parseFloat(item[1]),
             high: parseFloat(item[2]),
             low: parseFloat(item[3]),
@@ -139,7 +201,7 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
           const directData = await directRes.json();
           if (Array.isArray(directData) && directData.length > 0) {
             historyData = directData.map((item: any) => ({
-              time: Math.floor(item[0] / 1000),
+              time: Math.floor(item[0] / 1000) as UTCTimestamp,
               open: parseFloat(item[1]),
               high: parseFloat(item[2]),
               low: parseFloat(item[3]),
@@ -147,6 +209,22 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
             }));
           }
         } catch (e) {}
+      }
+
+      // Guaranteed fallback generator if API call failed
+      if (historyData.length === 0) {
+        const now = Math.floor(Date.now() / 1000);
+        let basePrice = selectedAsset === "BTC" ? 64000 : selectedAsset === "ETH" ? 3400 : 145;
+        for (let i = 120; i >= 0; i--) {
+          const time = (now - i * 60) as UTCTimestamp;
+          const delta = (Math.random() - 0.49) * (basePrice * 0.002);
+          const open = basePrice;
+          const close = open + delta;
+          const high = Math.max(open, close) + Math.random() * (basePrice * 0.001);
+          const low = Math.min(open, close) - Math.random() * (basePrice * 0.001);
+          basePrice = close;
+          historyData.push({ time, open, high, low, close });
+        }
       }
 
       if (!isSubscribed) return;
@@ -177,7 +255,7 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
             if (msg && msg.k) {
               const k = msg.k;
               const candle = {
-                time: Math.floor(k.t / 1000),
+                time: Math.floor(k.t / 1000) as UTCTimestamp,
                 open: parseFloat(k.o),
                 high: parseFloat(k.h),
                 low: parseFloat(k.l),
@@ -205,13 +283,24 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
 
     const handleResize = () => {
       if (chartContainerRef.current && chartRef.current) {
+        const width = chartContainerRef.current.clientWidth || 320;
+        const height = chartContainerRef.current.clientHeight || 250;
         chartRef.current.applyOptions({
-          width: chartContainerRef.current.clientWidth,
+          width,
+          height,
         });
       }
     };
 
     window.addEventListener("resize", handleResize);
+
+    // Initial resize check after layout renders
+    const resizeObserver = new ResizeObserver(() => {
+      handleResize();
+    });
+    if (chartContainerRef.current) {
+      resizeObserver.observe(chartContainerRef.current);
+    }
 
     return () => {
       isSubscribed = false;
@@ -219,6 +308,7 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
         ws.close();
       }
       window.removeEventListener("resize", handleResize);
+      resizeObserver.disconnect();
       if (chartRef.current) {
         chartRef.current.remove();
         chartRef.current = null;
@@ -255,7 +345,16 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
     try {
       if (isRegisterMode) {
         // Direct Firestore registration (works across all devices, mobile phones, Vercel, etc.)
-        const newUser = await registerUserInFirestore({ email, username, password });
+        const newUser = await registerUserInFirestore({
+          email,
+          username,
+          password,
+          displayName: displayName || username,
+          photoURL,
+          phone,
+          bio,
+          tradingPair,
+        });
 
         // Also sync with server endpoint if backend is available
         fetch("/api/auth/register", {
@@ -364,24 +463,7 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
             </div>
           </div>
 
-          {/* Crypto Intelligence & Fear Index */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5 flex items-center justify-between">
-              <div>
-                <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono block">
-                  Market Sentiment
-                </span>
-                <span className="text-sm font-bold text-amber-400 flex items-center gap-1.5 mt-0.5">
-                  <Flame className="w-4 h-4 text-amber-500" /> Extreme Greed / Volatility
-                </span>
-              </div>
-              <div className="w-10 h-10 rounded-full border-2 border-amber-500 flex items-center justify-center font-mono font-bold text-xs text-amber-400 bg-amber-500/10">
-                78
-              </div>
-            </div>
 
-
-          </div>
         </div>
 
         {/* Right Column: Geometric Balance Auth Card */}
@@ -429,22 +511,99 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
               </div>
 
               {isRegisterMode && (
-                <div>
-                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5 font-mono">
-                    Unique Username
-                  </label>
-                  <div className="relative">
-                    <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5" />
+                <>
+                  {/* Profile Picture Upload Header */}
+                  <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 flex items-center gap-3">
+                    <div className="relative group shrink-0">
+                      {photoURL ? (
+                        <img
+                          src={photoURL}
+                          alt="Profile preview"
+                          className="w-12 h-12 rounded-full object-cover border-2 border-indigo-500 shadow-md"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400">
+                          <User className="w-6 h-6" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-slate-200">Upload Profile Photo</p>
+                      <p className="text-[10px] text-slate-400">Essential for Chat & Host Admin Inspector</p>
+                      <input
+                        type="file"
+                        ref={regFileInputRef}
+                        onChange={handleRegPhotoUpload}
+                        accept="image/*"
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => regFileInputRef.current?.click()}
+                        className="mt-1 px-2.5 py-1 rounded bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/30 text-[10px] font-mono flex items-center gap-1"
+                      >
+                        <Camera className="w-3 h-3" /> Select Photo
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5 font-mono">
+                      Unique Username
+                    </label>
+                    <div className="relative">
+                      <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5" />
+                      <input
+                        type="text"
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        placeholder="trader_pro"
+                        required={isRegisterMode}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-3 py-3 text-sm sm:text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5 font-mono">
+                      Full Name / Display Name
+                    </label>
                     <input
                       type="text"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      placeholder="trader_pro"
-                      required={isRegisterMode}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-3 py-3 text-sm sm:text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                      placeholder="e.g. Alex Morgan"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
                     />
                   </div>
-                </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 font-mono">
+                        Phone / Contact
+                      </label>
+                      <input
+                        type="text"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        placeholder="+1 (555) 019"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 font-mono">
+                        Trading Asset
+                      </label>
+                      <input
+                        type="text"
+                        value={tradingPair}
+                        onChange={(e) => setTradingPair(e.target.value)}
+                        placeholder="BTC/USDT"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 font-mono"
+                      />
+                    </div>
+                  </div>
+                </>
               )}
 
               <div>

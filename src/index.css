@@ -1,1 +1,11 @@
 @import "tailwindcss";
+
+/* Hide TradingView attribution logo and links on charts */
+a[href*="tradingview"],
+#tv-attr-logo,
+tr:has(a[href*="tradingview"]) {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}

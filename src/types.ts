@@ -5,6 +5,12 @@ export interface UserProfile {
   id: string;
   email: string;
   username: string;
+  displayName?: string;
+  photoURL?: string;
+  phone?: string;
+  bio?: string;
+  tradingPair?: string;
+  startingCapital?: string;
   role: UserRole;
   status: UserStatus;
   createdAt?: string;
@@ -44,6 +50,12 @@ export interface AdminUserRecord {
   id: string;
   email: string;
   username: string;
+  displayName?: string;
+  photoURL?: string;
+  phone?: string;
+  bio?: string;
+  tradingPair?: string;
+  startingCapital?: string;
   role: UserRole;
   status: UserStatus;
   createdAt: string;

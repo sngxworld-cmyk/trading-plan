@@ -1,22 +1,22 @@
 import React from "react";
 import { UserProfile } from "../types";
-import { ShieldCheck, UserCheck, Clock, LogOut, LayoutDashboard, Settings, HelpCircle } from "lucide-react";
+import { ShieldCheck, UserCheck, Clock, HelpCircle, User } from "lucide-react";
 
 interface NavbarProps {
   user: UserProfile | null;
-  activeView: "app" | "admin";
-  setActiveView: (view: "app" | "admin") => void;
   onLogout: () => void;
   onRefreshStatus?: () => void;
   onReplayTutorial?: () => void;
+  onOpenProfile?: () => void;
+  activeView?: "app" | "admin";
+  setActiveView?: (view: "app" | "admin") => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   user,
-  activeView,
-  setActiveView,
   onLogout,
   onReplayTutorial,
+  onOpenProfile,
 }) => {
   return (
     <nav className="h-16 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md flex items-center justify-between px-2.5 sm:px-8 shrink-0 z-30 sticky top-0">
@@ -40,38 +40,6 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
 
       <div className="flex items-center gap-1 sm:gap-4 shrink-0">
-        {/* Navigation Switcher between Client App & Host Admin Portal */}
-        {user && (
-          <div className="flex bg-slate-950 p-0.5 rounded-lg border border-slate-800 shrink-0">
-            <button
-              onClick={() => setActiveView("app")}
-              className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] sm:text-xs font-medium transition-all whitespace-nowrap ${
-                activeView === "app"
-                  ? "bg-indigo-600 text-white shadow-sm shadow-indigo-600/20"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              <LayoutDashboard className="w-3.5 h-3.5" />
-              <span className="hidden xs:inline sm:inline">Journal</span>
-              <span className="xs:hidden sm:hidden">App</span>
-            </button>
-
-            {user.role === "admin" && (
-              <button
-                onClick={() => setActiveView("admin")}
-                className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] sm:text-xs font-medium transition-all whitespace-nowrap ${
-                  activeView === "admin"
-                    ? "bg-indigo-600 text-white shadow-sm shadow-indigo-600/20"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                <Settings className="w-3.5 h-3.5" />
-                <span>Admin</span>
-              </button>
-            )}
-          </div>
-        )}
-
         {/* Status indicator */}
         {user && (
           <div className="hidden xl:flex items-center gap-2 px-3 py-1 rounded-full bg-slate-950/60 border border-slate-800 text-xs">
@@ -100,7 +68,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         )}
 
-        {/* User Gmail badge & tutorial & logout */}
+        {/* User Gmail badge & tutorial & Profile Button */}
         {user ? (
           <div className="flex items-center gap-1.5 sm:gap-2.5">
             {onReplayTutorial && (
@@ -117,19 +85,36 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             <div className="text-right hidden sm:block">
               <p className="text-xs font-semibold text-slate-200 font-mono truncate max-w-[130px] sm:max-w-[160px]">
-                {user.email}
+                {user.displayName || user.email}
               </p>
               <p className="text-[10px] text-slate-500 uppercase tracking-tighter">
                 @{user.username}
               </p>
             </div>
 
+            {/* Profile Button (Replaces old Logout button per directive) */}
             <button
-              onClick={onLogout}
-              title="Logout session"
-              className="p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-rose-400 border border-slate-700/60 transition-colors shrink-0"
+              onClick={onOpenProfile}
+              title="Profile Editor & Settings"
+              className="group p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-800 text-slate-200 border border-slate-700/80 hover:border-indigo-500/50 transition-all flex items-center gap-2 shrink-0 shadow-sm"
             >
-              <LogOut className="w-4 h-4" />
+              {user.photoURL ? (
+                <img
+                  src={user.photoURL}
+                  alt={user.username}
+                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-full object-cover border border-indigo-500/80 shadow-md group-hover:scale-105 transition-transform"
+                />
+              ) : (
+                /* WhatsApp-Style Default Profile Logo when no photo is uploaded */
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-900 border border-slate-700/80 flex items-center justify-center text-slate-300 shadow-inner overflow-hidden shrink-0">
+                  <div className="w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-slate-600/70 mb-[-6px] flex items-center justify-center">
+                    <User className="w-3.5 h-3.5 text-slate-200" />
+                  </div>
+                </div>
+              )}
+              <span className="text-xs font-semibold text-slate-200 hidden md:inline-block">
+                Profile
+              </span>
             </button>
           </div>
         ) : (

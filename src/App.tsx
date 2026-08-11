@@ -3,14 +3,16 @@ import { UserProfile } from "./types";
 import { Navbar } from "./components/Navbar";
 import { GatewayScreen } from "./components/GatewayScreen";
 import { UnderReviewModal } from "./components/UnderReviewModal";
-import { HostAdminPortal } from "./components/HostAdminPortal";
 import { TradingApp } from "./components/TradingApp";
 import { RobotTutorialOverlay } from "./components/RobotTutorialOverlay";
+import { ProfileEditorModal } from "./components/ProfileEditorModal";
 
 export default function App() {
   // Active User session
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
-  const [activeView, setActiveView] = useState<"app" | "admin">("app");
+
+  // Profile Editor Modal State
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   // Tutorial overlay state
   const [showTutorial, setShowTutorial] = useState(false);
@@ -93,7 +95,6 @@ export default function App() {
 
   const handleLogout = () => {
     setCurrentUser(null);
-    setActiveView("app");
   };
 
   // 1. If user is not logged in -> Show Gateway Screen
@@ -106,24 +107,7 @@ export default function App() {
     );
   }
 
-  // 2. If user role is admin and active view is "admin" -> Render Host Admin Portal
-  if (currentUser.role === "admin" && activeView === "admin") {
-    return (
-      <div className="min-h-screen bg-slate-950">
-        <Navbar
-          user={currentUser}
-          activeView={activeView}
-          setActiveView={setActiveView}
-          onLogout={handleLogout}
-          onRefreshStatus={handleRefreshStatus}
-          onReplayTutorial={handleReplayTutorial}
-        />
-        <HostAdminPortal onReturnToApp={() => setActiveView("app")} />
-      </div>
-    );
-  }
-
-  // 3. Render Primary Application with TradingApp
+  // 2. Render Primary Application with TradingApp
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-600 selection:text-white relative">
       {/* 3D Robot First-Login Interactive Tutorial Overlay */}
@@ -137,12 +121,25 @@ export default function App() {
       {/* Top Navbar */}
       <Navbar
         user={currentUser}
-        activeView={activeView}
-        setActiveView={setActiveView}
         onLogout={handleLogout}
         onRefreshStatus={handleRefreshStatus}
         onReplayTutorial={handleReplayTutorial}
+        onOpenProfile={() => setIsProfileOpen(true)}
       />
+
+      {/* Profile Editor Modal */}
+      {isProfileOpen && currentUser && (
+        <ProfileEditorModal
+          user={currentUser}
+          isOpen={isProfileOpen}
+          onClose={() => setIsProfileOpen(false)}
+          onUserUpdated={(updatedUser) => setCurrentUser(updatedUser)}
+          onLogout={() => {
+            setIsProfileOpen(false);
+            handleLogout();
+          }}
+        />
+      )}
 
       {/* Main Content Area */}
       <div className="flex-1 relative animate-in fade-in slide-in-from-bottom-2 duration-500">
