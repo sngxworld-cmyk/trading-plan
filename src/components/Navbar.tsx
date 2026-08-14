@@ -8,8 +8,8 @@ interface NavbarProps {
   onRefreshStatus?: () => void;
   onReplayTutorial?: () => void;
   onOpenProfile?: () => void;
-  activeView?: "app" | "admin";
-  setActiveView?: (view: "app" | "admin") => void;
+  activeView?: "journal" | "community";
+  onToggleView?: (view: "journal" | "community") => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -17,7 +17,26 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogout,
   onReplayTutorial,
   onOpenProfile,
+  activeView = "journal",
+  onToggleView,
 }) => {
+  const [now, setNow] = React.useState(() => Date.now());
+
+  React.useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const isApproved = user?.status === "approved" || user?.role === "admin";
+  const createdTime = user?.createdAt ? new Date(user.createdAt).getTime() : Date.now();
+  const remainingMs = Math.max(0, 5 * 24 * 60 * 60 * 1000 - (now - createdTime));
+  const isTrialActive = !isApproved && remainingMs > 0;
+
+  const days = Math.floor(remainingMs / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((remainingMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const minutes = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
+  const seconds = Math.floor((remainingMs % (1000 * 60)) / 1000);
+
   return (
     <nav className="h-16 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md flex items-center justify-between px-2.5 sm:px-8 shrink-0 z-30 sticky top-0">
       <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
@@ -37,33 +56,65 @@ export const Navbar: React.FC<NavbarProps> = ({
             SNGxJOURNAL Ecosystem Matrix
           </span>
         </div>
+
+        {/* View Switcher Tabs */}
+        {onToggleView && (
+          <div className="hidden md:flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 ml-2 lg:ml-4 font-mono text-xs">
+            <button
+              onClick={() => onToggleView("journal")}
+              className={`px-2.5 lg:px-3 py-1 rounded-lg font-bold transition-all ${
+                activeView === "journal"
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              Trading Journal
+            </button>
+            <button
+              onClick={() => onToggleView("community")}
+              className={`px-2.5 lg:px-3 py-1 rounded-lg font-bold transition-all flex items-center gap-1.5 ${
+                activeView === "community"
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <span>Community & Signals</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center gap-1 sm:gap-4 shrink-0">
-        {/* Status indicator */}
+        {/* Status & Trial Countdown Indicator */}
         {user && (
-          <div className="hidden xl:flex items-center gap-2 px-3 py-1 rounded-full bg-slate-950/60 border border-slate-800 text-xs">
+          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-950/80 border border-slate-800 text-xs shadow-inner">
             {user.role === "admin" ? (
               <>
                 <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>
-                <span className="text-indigo-400 font-medium uppercase tracking-wider text-[10px] flex items-center gap-1">
+                <span className="text-indigo-400 font-medium uppercase tracking-wider text-[10px] flex items-center gap-1 font-mono">
                   <ShieldCheck className="w-3 h-3" /> Host Master Admin
                 </span>
               </>
             ) : user.status === "approved" ? (
               <>
                 <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                <span className="text-emerald-400 font-medium uppercase tracking-wider text-[10px] flex items-center gap-1">
-                  <UserCheck className="w-3 h-3" /> Access Granted
+                <span className="text-emerald-400 font-medium uppercase tracking-wider text-[10px] flex items-center gap-1 font-mono">
+                  <UserCheck className="w-3 h-3" /> Full Access Granted
                 </span>
               </>
+            ) : isTrialActive ? (
+              <div className="flex items-center gap-1.5 text-amber-400 font-mono text-[11px] font-semibold">
+                <Clock className="w-3.5 h-3.5 text-amber-400 animate-pulse shrink-0" />
+                <span>
+                  5-Day Trial: <span className="text-white font-bold">{days}d {hours}h {minutes}m {seconds}s</span>
+                </span>
+              </div>
             ) : (
-              <>
-                <div className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></div>
-                <span className="text-amber-400 font-medium uppercase tracking-wider text-[10px] flex items-center gap-1">
-                  <Clock className="w-3 h-3" /> Pending Access Approval
-                </span>
-              </>
+              <div className="flex items-center gap-1.5 text-rose-400 font-mono text-[10px] font-semibold uppercase">
+                <Clock className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                <span>Trial Expired - Awaiting Payment</span>
+              </div>
             )}
           </div>
         )}

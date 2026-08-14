@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { createChart, CandlestickSeries, IChartApi, ISeriesApi, UTCTimestamp } from "lightweight-charts";
-import { Eye, EyeOff, Lock, Mail, User, ShieldCheck, Flame, TrendingUp, PhoneCall, ArrowRight, KeyRound, Camera, Phone, Tag } from "lucide-react";
+import { Eye, EyeOff, Lock, Mail, User, ShieldCheck, Flame, TrendingUp, PhoneCall, ArrowRight, KeyRound, Camera, Phone, Tag, Calendar, MessageSquare, Sparkles, AlertCircle, Smartphone, CheckCircle, Unlock } from "lucide-react";
 import { UserProfile } from "../types";
 import { registerUserInFirestore, loginUserInFirestore } from "../lib/userStore";
+import { getLocalDeviceRegistration, verifyDeviceRegistrationPermission, isHostMasterDevice, setHostMasterDevice } from "../utils/deviceUtils";
 
 interface GatewayScreenProps {
   onLoginSuccess: (user: UserProfile) => void;
@@ -14,12 +15,20 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
   onRegisteredPending,
 }) => {
   const [isRegisterMode, setIsRegisterMode] = useState(false);
-  const [email, setEmail] = useState("");
+  const [deviceInfo, setDeviceInfo] = useState(() => getLocalDeviceRegistration());
+  const [showAdminUnlockModal, setShowAdminUnlockModal] = useState(false);
+  const [adminUnlockPin, setAdminUnlockPin] = useState("");
+  const [adminUnlockMsg, setAdminUnlockMsg] = useState<string | null>(null);
+  const [email, setEmail] = useState(() => {
+    const dev = getLocalDeviceRegistration();
+    return dev.registeredEmail || "";
+  });
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [photoURL, setPhotoURL] = useState("");
   const [phone, setPhone] = useState("");
+  const [dob, setDob] = useState("");
   const [bio, setBio] = useState("");
   const [tradingPair, setTradingPair] = useState("BTC/USDT");
 
@@ -29,6 +38,38 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const regFileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const dev = getLocalDeviceRegistration();
+    setDeviceInfo(dev);
+    if (dev.registeredEmail && !email) {
+      setEmail(dev.registeredEmail);
+    }
+  }, []);
+
+  // Host Admin Master Device PIN / Code verification
+  const handleUnlockMasterDevice = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanPin = adminUnlockPin.trim().toLowerCase();
+    if (
+      cleanPin === "sngxworld@gmail.com" ||
+      cleanPin === "94752840841" ||
+      cleanPin === "+94752840841" ||
+      cleanPin === "sngxadmin" ||
+      cleanPin === "sngx2026"
+    ) {
+      setHostMasterDevice(true);
+      setDeviceInfo(getLocalDeviceRegistration());
+      setAdminUnlockMsg("✅ Success! This device is now marked as a Host Master Device with unlimited registrations.");
+      setTimeout(() => {
+        setShowAdminUnlockModal(false);
+        setAdminUnlockMsg(null);
+        setAdminUnlockPin("");
+      }, 1200);
+    } else {
+      setAdminUnlockMsg("❌ Invalid Host Admin PIN or Email key.");
+    }
+  };
 
   // Handle Photo Upload during Registration
   const handleRegPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -328,22 +369,16 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
 
     setLoading(true);
 
-    const safeFetchJson = async (url: string, options?: RequestInit) => {
-      try {
-        const res = await fetch(url, options);
-        const contentType = res.headers.get("content-type") || "";
-        if (!contentType.includes("application/json")) {
-          return { isJson: false, status: res.status, ok: false, data: null };
-        }
-        const data = await res.json();
-        return { isJson: true, status: res.status, ok: res.ok, data };
-      } catch {
-        return { isJson: false, status: 0, ok: false, data: null };
-      }
-    };
-
     try {
       if (isRegisterMode) {
+        // Enforce 1 registration per device check
+        const devCheck = await verifyDeviceRegistrationPermission(email);
+        if (!devCheck.allowed) {
+          setErrorMessage(devCheck.reason || "Registration Limit: Only 1 account registration is permitted per device.");
+          setLoading(false);
+          return;
+        }
+
         // Direct Firestore registration (works across all devices, mobile phones, Vercel, etc.)
         const newUser = await registerUserInFirestore({
           email,
@@ -352,6 +387,7 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
           displayName: displayName || username,
           photoURL,
           phone,
+          dob,
           bio,
           tradingPair,
         });
@@ -360,19 +396,19 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
         fetch("/api/auth/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, username, password }),
+          body: JSON.stringify({ email, username, password, displayName, photoURL, phone, dob, bio, tradingPair }),
         }).catch(() => {});
 
         if (newUser.status === "approved") {
           setSuccessMessage("Pre-approved access! Logging you in...");
           setTimeout(() => onLoginSuccess(newUser), 800);
         } else {
-          setSuccessMessage("Account registered! Status: UNDER REVIEW. Awaiting Host Admin approval.");
-          setTimeout(() => onRegisteredPending(newUser), 800);
+          setSuccessMessage("Account registered! Your 5-Day Free Trial has started. Welcome!");
+          setTimeout(() => onLoginSuccess(newUser), 800);
         }
       } else {
         // Direct Firestore login
-        const { user: loggedInUser, status } = await loginUserInFirestore(email, password);
+        const { user: loggedInUser } = await loginUserInFirestore(email, password);
 
         // Also sync with server endpoint if backend is available
         fetch("/api/auth/login", {
@@ -381,11 +417,7 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
           body: JSON.stringify({ identifier: email, password }),
         }).catch(() => {});
 
-        if (status === "pending") {
-          onRegisteredPending(loggedInUser);
-        } else {
-          onLoginSuccess(loggedInUser);
-        }
+        onLoginSuccess(loggedInUser);
       }
     } catch (err: any) {
       setErrorMessage(err.message || "An error occurred.");
@@ -478,6 +510,44 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
                   ? "Enter your Gmail to request access to Trade Journal Tracker"
                   : "Login with your Gmail or Username to access app"}
               </p>
+              {isRegisterMode && (
+                <div className="mt-2.5 space-y-2">
+                  <div className="px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] font-medium flex items-center justify-center gap-1.5">
+                    <span>⚠️ Please add your true information for Host Admin review</span>
+                  </div>
+
+                  {deviceInfo.isMasterDevice ? (
+                    <div className="p-3 rounded-xl bg-indigo-950/60 border border-amber-500/40 text-left flex items-start gap-2.5">
+                      <Sparkles className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                      <div className="text-[11px] text-amber-200/90 leading-relaxed font-mono">
+                        <strong className="text-amber-300 font-sans block">👑 Host Admin Master Device Active:</strong>
+                        Unlimited device registrations and test account creation are permitted on this device without restrictions.
+                      </div>
+                    </div>
+                  ) : deviceInfo.isRegistered && deviceInfo.registeredEmail ? (
+                    <div className="p-3 rounded-xl bg-slate-950 border border-amber-500/30 text-left">
+                      <div className="flex items-center gap-1.5 text-amber-400 text-xs font-bold font-mono mb-1">
+                        <Smartphone className="w-3.5 h-3.5" />
+                        <span>1 Device / 1 Account Limit</span>
+                      </div>
+                      <p className="text-[11px] text-slate-300 leading-normal mb-2">
+                        This device is already linked to <strong className="text-white font-mono">{deviceInfo.registeredEmail}</strong>. Creating a new account from this device is restricted. If your 5-day trial has expired, log into your registered account to clear the review page via subscription payment.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsRegisterMode(false);
+                          setEmail(deviceInfo.registeredEmail || "");
+                          setErrorMessage(null);
+                        }}
+                        className="w-full py-1.5 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-700 text-xs font-mono font-bold transition-all text-center"
+                      >
+                        Switch to Login ({deviceInfo.registeredEmail})
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              )}
             </div>
 
             {errorMessage && (
@@ -592,14 +662,13 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
                     </div>
                     <div>
                       <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 font-mono">
-                        Trading Asset
+                        Date of Birth (DOB)
                       </label>
                       <input
-                        type="text"
-                        value={tradingPair}
-                        onChange={(e) => setTradingPair(e.target.value)}
-                        placeholder="BTC/USDT"
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 font-mono"
+                        type="date"
+                        value={dob}
+                        onChange={(e) => setDob(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 font-mono focus:outline-none focus:border-indigo-500"
                       />
                     </div>
                   </div>
@@ -673,12 +742,131 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
               </span>
             </div>
 
-            <div className="mt-4 pt-3 border-t border-slate-800 text-center text-[10px] text-slate-600 font-mono">
-              SNGxJOURNAL Ecosystem Systems Hub v4.2
+            {/* Community Chat & Signal Groups Registration Prompt */}
+            <div className="mt-4 p-3.5 rounded-xl bg-gradient-to-r from-indigo-950/80 via-slate-900 to-indigo-950/80 border border-indigo-500/40 shadow-lg shadow-indigo-950/50">
+              <div className="flex items-center gap-3 mb-2.5">
+                <div className="w-9 h-9 rounded-lg bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shrink-0">
+                  <MessageSquare className="w-5 h-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-bold text-slate-100 font-mono">
+                      Community Chat & Signals
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase">
+                      Registration Required
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">
+                    Register with your true Gmail profile to unlock public chat, direct messages, and VIP signal groups.
+                  </span>
+                </div>
+              </div>
+
+              {!isRegisterMode ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsRegisterMode(true);
+                    setErrorMessage(null);
+                    setSuccessMessage("Please fill out the registration form to unlock Community Chat & Signals.");
+                  }}
+                  className="w-full py-2 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md shadow-indigo-600/30"
+                >
+                  <span>Register Now to Access Community</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              ) : (
+                <div className="text-center py-1 text-[11px] font-mono text-indigo-300 flex items-center justify-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Fill in the details above to complete your registration</span>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-slate-800 flex flex-col items-center gap-1.5 text-center">
+              <div className="flex items-center justify-center gap-2 text-[10px] font-mono">
+                {deviceInfo.isMasterDevice ? (
+                  <span className="text-amber-400 font-bold flex items-center gap-1 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/30">
+                    <Sparkles className="w-3 h-3 text-amber-400" />
+                    <span>👑 Host Master Device: Unlimited Registrations Active</span>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowAdminUnlockModal(true)}
+                    className="text-slate-500 hover:text-amber-400 flex items-center gap-1 transition-colors group cursor-pointer"
+                  >
+                    <Smartphone className="w-3 h-3 text-indigo-400 group-hover:text-amber-400" />
+                    <span>Device Security Active &bull; <span className="underline decoration-slate-600 group-hover:decoration-amber-400">Host Master Unlock</span></span>
+                  </button>
+                )}
+              </div>
+              <div className="text-[10px] text-slate-600 font-mono">
+                SNGxJOURNAL Ecosystem Systems Hub v4.2
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Host Admin Master Device Quick-Unlock Modal */}
+      {showAdminUnlockModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-in fade-in">
+          <div className="bg-slate-900 border border-amber-500/40 p-6 rounded-2xl max-w-sm w-full shadow-2xl relative">
+            <div className="flex items-center gap-2.5 mb-3 text-amber-400">
+              <Unlock className="w-5 h-5" />
+              <h3 className="font-bold text-white text-base font-mono">Host Device Master Unlock</h3>
+            </div>
+            <p className="text-xs text-slate-300 mb-4 leading-relaxed">
+              Authenticate this device as the Host Admin terminal to enable unlimited account registrations, test client setups, and unlimited device permissions.
+            </p>
+
+            <form onSubmit={handleUnlockMasterDevice} className="space-y-3">
+              <div>
+                <label className="block text-[11px] font-mono text-slate-400 mb-1">
+                  Host Admin Email or Master Key
+                </label>
+                <input
+                  type="text"
+                  value={adminUnlockPin}
+                  onChange={(e) => setAdminUnlockPin(e.target.value)}
+                  placeholder="e.g. sngxworld@gmail.com or Phone"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-amber-500 font-mono"
+                  autoFocus
+                  required
+                />
+              </div>
+
+              {adminUnlockMsg && (
+                <div className={`p-2.5 rounded-lg text-xs font-mono ${adminUnlockMsg.startsWith("✅") ? "bg-emerald-500/10 text-emerald-300 border border-emerald-500/30" : "bg-rose-500/10 text-rose-300 border border-rose-500/30"}`}>
+                  {adminUnlockMsg}
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAdminUnlockModal(false);
+                    setAdminUnlockMsg(null);
+                    setAdminUnlockPin("");
+                  }}
+                  className="flex-1 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono font-semibold transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold transition-all shadow-md shadow-amber-500/20"
+                >
+                  Activate Device
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -9,6 +9,13 @@ interface UserRecord {
   email: string;
   username: string;
   password: string;
+  displayName?: string;
+  photoURL?: string;
+  phone?: string;
+  dob?: string;
+  bio?: string;
+  tradingPair?: string;
+  startingCapital?: string;
   role: "admin" | "client";
   status: "pending" | "approved" | "rejected";
   createdAt: string;
@@ -21,6 +28,7 @@ interface UserRecord {
 interface DBStructure {
   users: UserRecord[];
   preApprovedEmails: string[];
+  registeredDevices?: Record<string, { email: string; registeredAt: string }>;
   logs: { timestamp: string; message: string; type: "info" | "access" | "warn" }[];
 }
 
@@ -191,6 +199,12 @@ app.use((req, res, next) => {
           id: user.id,
           email: user.email,
           username: user.username,
+          displayName: user.displayName || user.username,
+          photoURL: user.photoURL || "",
+          phone: user.phone || "",
+          bio: user.bio || "",
+          tradingPair: user.tradingPair || "BTC/USDT",
+          startingCapital: user.startingCapital || "",
           role: user.role,
           status: user.status,
         },
@@ -204,9 +218,29 @@ app.use((req, res, next) => {
     return res.json({ status: "not_found" });
   });
 
+  // Device Registration Endpoint
+  app.post("/api/device/register", (req, res) => {
+    const { deviceId, email, registeredAt, isMasterDevice } = req.body;
+    if (!deviceId || !email) {
+      return res.status(400).json({ error: "deviceId and email required" });
+    }
+    const currentDb = getDB();
+    if (!currentDb.registeredDevices) {
+      currentDb.registeredDevices = {};
+    }
+    const cleanEmail = email.trim().toLowerCase();
+    currentDb.registeredDevices[deviceId] = {
+      email: cleanEmail,
+      registeredAt: registeredAt || new Date().toISOString(),
+      ...(isMasterDevice || cleanEmail === "sngxworld@gmail.com" ? { isMasterDevice: true } : {}),
+    } as any;
+    saveDB(currentDb);
+    return res.json({ success: true });
+  });
+
   // Client / Host Auth Registration
   app.post("/api/auth/register", (req, res) => {
-    const { email, username, password } = req.body;
+    const { email, username, password, displayName, photoURL, phone, dob, bio, tradingPair, startingCapital, deviceId, isMasterDevice } = req.body;
 
     if (!email || !username || !password) {
       return res.status(400).json({ error: "Gmail address, username, and password are required." });
@@ -220,6 +254,20 @@ app.use((req, res, next) => {
     }
 
     const currentDb = getDB();
+    if (!currentDb.registeredDevices) {
+      currentDb.registeredDevices = {};
+    }
+
+    // Check device registration limit: 1 registration per device unless it is a master host device
+    const isMaster = isMasterDevice || cleanEmail === "sngxworld@gmail.com";
+    if (deviceId && !isMaster) {
+      const existingDev = currentDb.registeredDevices[deviceId] as any;
+      if (existingDev && !existingDev.isMasterDevice && existingDev.email && existingDev.email.toLowerCase() !== cleanEmail && existingDev.email.toLowerCase() !== "sngxworld@gmail.com") {
+        return res.status(400).json({
+          error: `Registration Limit: This device is already linked to account (${existingDev.email}). Only 1 account registration is allowed per device.`,
+        });
+      }
+    }
 
     // Check existing
     const existingUser = currentDb.users.find(
@@ -245,6 +293,13 @@ app.use((req, res, next) => {
       email: cleanEmail,
       username: cleanUsername,
       password: password,
+      displayName: (displayName || cleanUsername).trim(),
+      photoURL: photoURL || "",
+      phone: (phone || "").trim(),
+      dob: (dob || "").trim(),
+      bio: (bio || "").trim(),
+      tradingPair: (tradingPair || "BTC/USDT").trim(),
+      startingCapital: (startingCapital || "").trim(),
       role: role,
       status: status,
       createdAt: new Date().toISOString(),
@@ -252,6 +307,12 @@ app.use((req, res, next) => {
     };
 
     currentDb.users.push(newUser);
+    if (deviceId) {
+      currentDb.registeredDevices[deviceId] = {
+        email: cleanEmail,
+        registeredAt: newUser.createdAt,
+      };
+    }
     saveDB(currentDb);
 
     logActivity(
@@ -270,6 +331,12 @@ app.use((req, res, next) => {
         id: newUser.id,
         email: newUser.email,
         username: newUser.username,
+        displayName: newUser.displayName,
+        photoURL: newUser.photoURL,
+        phone: newUser.phone,
+        bio: newUser.bio,
+        tradingPair: newUser.tradingPair,
+        startingCapital: newUser.startingCapital,
         role: newUser.role,
         status: newUser.status,
       },
@@ -308,6 +375,12 @@ app.use((req, res, next) => {
           email: cleanId,
           username: usernameFromEmail,
           password: password,
+          displayName: usernameFromEmail,
+          photoURL: "",
+          phone: "",
+          bio: "",
+          tradingPair: "BTC/USDT",
+          startingCapital: "",
           role: role,
           status: status,
           createdAt: new Date().toISOString(),
@@ -360,19 +433,29 @@ app.use((req, res, next) => {
 
     logActivity(`Login event: ${user.email} (${user.role.toUpperCase()}) - Status: ${user.status.toUpperCase()}`, "access");
 
+    const fullUserObj = {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      displayName: user.displayName || user.username,
+      photoURL: user.photoURL || "",
+      phone: user.phone || "",
+      dob: user.dob || "",
+      bio: user.bio || "",
+      tradingPair: user.tradingPair || "BTC/USDT",
+      startingCapital: user.startingCapital || "",
+      role: user.role,
+      status: user.status,
+      tradingData: user.tradingData || null,
+    };
+
     // Check status
     if (user.status === "pending") {
       return res.status(403).json({
         success: false,
         status: "pending",
         message: "Account Under Review. The Host Admin has not granted access to your Gmail yet.",
-        user: {
-          id: user.id,
-          email: user.email,
-          username: user.username,
-          role: user.role,
-          status: user.status,
-        },
+        user: fullUserObj,
       });
     }
 
@@ -381,13 +464,7 @@ app.use((req, res, next) => {
         success: false,
         status: "rejected",
         message: "Access for this Gmail account has been revoked or declined by the Host Admin.",
-        user: {
-          id: user.id,
-          email: user.email,
-          username: user.username,
-          role: user.role,
-          status: user.status,
-        },
+        user: fullUserObj,
       });
     }
 
@@ -395,13 +472,54 @@ app.use((req, res, next) => {
       success: true,
       status: "approved",
       message: "Login successful!",
+      user: fullUserObj,
+    });
+  });
+
+  // USER: Update Profile Details
+  app.post("/api/user/profile", (req, res) => {
+    const { email, updates } = req.body;
+    if (!email) return res.status(400).json({ error: "Email address is required." });
+
+    const cleanEmail = email.trim().toLowerCase();
+    const currentDb = getDB();
+
+    const user = currentDb.users.find(
+      (u) => u.email.trim().toLowerCase() === cleanEmail
+    );
+
+    if (!user) {
+      return res.status(404).json({ error: "User profile not found." });
+    }
+
+    if (updates && typeof updates === "object") {
+      if (updates.username) user.username = updates.username.trim();
+      if (updates.displayName !== undefined) user.displayName = updates.displayName.trim();
+      if (updates.photoURL !== undefined) user.photoURL = updates.photoURL;
+      if (updates.phone !== undefined) user.phone = updates.phone.trim();
+      if (updates.dob !== undefined) user.dob = updates.dob.trim();
+      if (updates.bio !== undefined) user.bio = updates.bio.trim();
+      if (updates.tradingPair !== undefined) user.tradingPair = updates.tradingPair.trim();
+      if (updates.startingCapital !== undefined) user.startingCapital = updates.startingCapital.trim();
+    }
+
+    saveDB(currentDb);
+    logActivity(`Profile details updated for: ${cleanEmail}`, "info");
+
+    return res.json({
+      success: true,
       user: {
         id: user.id,
         email: user.email,
         username: user.username,
+        displayName: user.displayName || user.username,
+        photoURL: user.photoURL || "",
+        phone: user.phone || "",
+        bio: user.bio || "",
+        tradingPair: user.tradingPair || "BTC/USDT",
+        startingCapital: user.startingCapital || "",
         role: user.role,
         status: user.status,
-        tradingData: user.tradingData || null,
       },
     });
   });
@@ -756,6 +874,148 @@ app.use((req, res, next) => {
       console.error("Market tickers fetch error:", err?.message);
       return res.status(500).json({ error: "Failed to fetch live market tickers." });
     }
+  });
+
+  // =========================================================================
+  // COMMUNITY & SIGNAL GROUPS BACKEND API (Slides 1 - 15)
+  // =========================================================================
+  
+  // In-memory store fallback with persistent DB support
+  let communityChatMessages: any[] = [];
+  let communitySignalGroups: any[] = [];
+  let communitySignals: any[] = [];
+  let communityDirectMessages: any[] = [];
+  let communityGroupChatMessages: { [groupId: string]: any[] } = {};
+
+  // Group Chat: GET messages for a signal group
+  app.get("/api/community/signal-groups/:groupId/chat", (req, res) => {
+    const { groupId } = req.params;
+    const msgs = communityGroupChatMessages[groupId] || [];
+    return res.json({ success: true, messages: msgs });
+  });
+
+  // Group Chat: POST message for a signal group (enforces admin-only talk rules)
+  app.post("/api/community/signal-groups/:groupId/chat", (req, res) => {
+    const { groupId } = req.params;
+    const msg = req.body;
+    if (!msg || (!msg.content && !msg.photoUrl && !msg.audioUrl)) {
+      return res.status(400).json({ error: "Message content or media is required." });
+    }
+
+    if (!communityGroupChatMessages[groupId]) {
+      communityGroupChatMessages[groupId] = [];
+    }
+
+    communityGroupChatMessages[groupId].push(msg);
+    return res.json({ success: true, message: msg });
+  });
+
+  // Chat Room: GET All Messages (Filters out messages older than 4 months per Slide 14)
+  app.get("/api/community/chat/messages", (_req, res) => {
+    const FOUR_MONTHS_MS = 120 * 24 * 60 * 60 * 1000;
+    const cutoff = Date.now() - FOUR_MONTHS_MS;
+    const valid = communityChatMessages.filter((m) => new Date(m.createdAt).getTime() > cutoff);
+    return res.json({ success: true, messages: valid });
+  });
+
+  // Chat Room: POST Message
+  app.post("/api/community/chat/messages", (req, res) => {
+    const { sender, content, photoUrl } = req.body;
+    if (!sender || (!content && !photoUrl)) {
+      return res.status(400).json({ error: "Sender and message content or photo are required." });
+    }
+
+    const newMessage = {
+      id: "msg_" + Math.random().toString(36).substring(2, 9),
+      senderEmail: sender.email,
+      senderUsername: sender.username,
+      senderDisplayName: sender.displayName || sender.username,
+      senderPhotoURL: sender.photoURL || "",
+      senderRole: sender.platformRole || (sender.role === "admin" ? "owner" : "member"),
+      content: (content || "").trim(),
+      photoUrl: photoUrl || "",
+      createdAt: new Date().toISOString(),
+    };
+
+    communityChatMessages.push(newMessage);
+    return res.json({ success: true, message: newMessage });
+  });
+
+  // Signal Groups: GET All Groups
+  app.get("/api/community/signal-groups", (_req, res) => {
+    return res.json({ success: true, groups: communitySignalGroups });
+  });
+
+  // Signal Groups: POST Create Group (Enforces USD price cap ≤ $17 per User Directive)
+  app.post("/api/community/signal-groups", (req, res) => {
+    const { name, description, logoUrl, priceUsd, isVerified, admin } = req.body;
+    if (!name || !admin) {
+      return res.status(400).json({ error: "Group name and admin profile are required." });
+    }
+
+    const cappedPrice = Math.min(Math.max(0, Number(priceUsd) || 0), 17);
+
+    const newGroup = {
+      id: "grp_" + Math.random().toString(36).substring(2, 9),
+      name: name.trim(),
+      description: (description || "").trim(),
+      logoUrl: logoUrl || "",
+      priceUsd: cappedPrice,
+      isVerified: Boolean(isVerified),
+      adminEmail: admin.email,
+      adminUsername: admin.username,
+      adminDisplayName: admin.displayName || admin.username,
+      adminPhotoURL: admin.photoURL || "",
+      adminRole: admin.platformRole || (admin.role === "admin" ? "owner" : "member"),
+      membersCount: 1,
+      members: [admin.email],
+      winRate: 0,
+      totalSignals: 0,
+      createdAt: new Date().toISOString(),
+    };
+
+    communitySignalGroups.push(newGroup);
+    return res.json({ success: true, group: newGroup });
+  });
+
+  // Direct Messages: GET All DMs for a user
+  app.get("/api/community/dms", (req, res) => {
+    const email = (req.query.email as string)?.toLowerCase();
+    if (!email) {
+      return res.json({ success: true, messages: communityDirectMessages });
+    }
+    const filtered = communityDirectMessages.filter(
+      (m) => m.senderEmail.toLowerCase() === email || m.receiverEmail.toLowerCase() === email
+    );
+    return res.json({ success: true, messages: filtered });
+  });
+
+  // Direct Messages: POST Send DM
+  app.post("/api/community/dms", (req, res) => {
+    const { sender, receiver, content, isJoinRequest, targetGroupName, targetGroupId } = req.body;
+    if (!sender || !receiver || !content) {
+      return res.status(400).json({ error: "Sender, receiver, and message content are required." });
+    }
+
+    const newDm = {
+      id: "dm_" + Math.random().toString(36).substring(2, 9),
+      senderEmail: sender.email,
+      senderUsername: sender.username,
+      senderDisplayName: sender.displayName || sender.username,
+      senderPhotoURL: sender.photoURL || "",
+      receiverEmail: receiver.email,
+      receiverUsername: receiver.username,
+      receiverDisplayName: receiver.displayName || receiver.username,
+      receiverPhotoURL: receiver.photoURL || "",
+      content: content.trim(),
+      isJoinRequest: Boolean(isJoinRequest),
+      targetGroupName: targetGroupName || "",
+      targetGroupId: targetGroupId || "",
+      createdAt: new Date().toISOString(),
+    };
+
+    communityDirectMessages.push(newDm);
+    return res.json({ success: true, dm: newDm });
   });
 
 // Helper to generate dynamic tailored responses when LLM or API Key is unavailable

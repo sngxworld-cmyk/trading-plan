@@ -12,6 +12,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { TradingDataStore, User, UserProfile, UserStatus, AdminUserRecord, AuditLog } from "../types";
+import { verifyDeviceRegistrationPermission, recordDeviceRegistration, getDeviceId, isHostMasterDevice } from "../utils/deviceUtils";
 
 export enum OperationType {
   CREATE = "create",
@@ -113,11 +114,19 @@ export async function registerUserInFirestore(params: {
   displayName?: string;
   photoURL?: string;
   phone?: string;
+  dob?: string;
   bio?: string;
   tradingPair?: string;
+  startingCapital?: string;
 }): Promise<User> {
   const cleanEmail = cleanEmailKey(params.email);
   if (!cleanEmail) throw new Error("Email address is required.");
+
+  // 0. Verify only one registration per device is allowed
+  const devCheck = await verifyDeviceRegistrationPermission(cleanEmail);
+  if (!devCheck.allowed) {
+    throw new Error(devCheck.reason || "Only 1 account registration is allowed per device. Please log in or complete payment.");
+  }
 
   const docPath = `users/${cleanEmail}`;
 
@@ -159,8 +168,10 @@ export async function registerUserInFirestore(params: {
     displayName: params.displayName?.trim() || params.username.trim(),
     photoURL: params.photoURL || "",
     phone: params.phone?.trim() || "",
+    dob: params.dob?.trim() || "",
     bio: params.bio?.trim() || "",
     tradingPair: params.tradingPair?.trim() || "BTC/USDT",
+    startingCapital: params.startingCapital?.trim() || "",
     role,
     status,
     createdAt: new Date().toISOString(),
@@ -170,6 +181,7 @@ export async function registerUserInFirestore(params: {
   const firestoreRecord: Record<string, any> = {
     ...newUser,
     password: params.password || "",
+    deviceId: getDeviceId(),
     tradingData: {},
   };
 
@@ -185,12 +197,21 @@ export async function registerUserInFirestore(params: {
     }
   }
 
+  // Bind device to this registered account permanently
+  try {
+    await recordDeviceRegistration(cleanEmail, newUser.createdAt);
+  } catch (e) {}
+
   // Also register via Server API
   try {
     await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(params),
+      body: JSON.stringify({
+        ...params,
+        deviceId: getDeviceId(),
+        isMasterDevice: cleanEmail === "sngxworld@gmail.com" || isHostMasterDevice(),
+      }),
     });
   } catch (e) {}
 
@@ -249,7 +270,7 @@ export async function updateUserProfileInFirestore(
     }
   }
 
-  // Update local backup
+  // Update local backup and active session
   try {
     if (existingLocalIndex !== -1) {
       localUsers[existingLocalIndex] = updatedRecord;
@@ -259,6 +280,15 @@ export async function updateUserProfileInFirestore(
     localStorage.setItem("sngx_local_users", JSON.stringify(localUsers));
   } catch (e) {}
 
+  // Sync profile updates with Server API
+  try {
+    await fetch("/api/user/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: cleanEmail, updates }),
+    });
+  } catch (e) {}
+
   const updatedUser: User = {
     id: updatedRecord.id || "usr_" + Date.now(),
     email: cleanEmail,
@@ -266,14 +296,21 @@ export async function updateUserProfileInFirestore(
     displayName: updatedRecord.displayName || updatedRecord.username || cleanEmail.split("@")[0],
     photoURL: updatedRecord.photoURL || "",
     phone: updatedRecord.phone || "",
+    dob: updatedRecord.dob || "",
     bio: updatedRecord.bio || "",
     tradingPair: updatedRecord.tradingPair || "BTC/USDT",
+    startingCapital: updatedRecord.startingCapital || "",
     role: updatedRecord.role || "client",
     status: updatedRecord.status || "approved",
     createdAt: updatedRecord.createdAt,
     lastLogin: updatedRecord.lastLogin || new Date().toISOString(),
     tradingData: updatedRecord.tradingData || null,
   };
+
+  // Save updated active user session
+  try {
+    localStorage.setItem("tradeplan_active_user", JSON.stringify(updatedUser));
+  } catch (e) {}
 
   return updatedUser;
 }
@@ -397,6 +434,7 @@ export async function loginUserInFirestore(
     displayName: matchedData.displayName || matchedData.username,
     photoURL: matchedData.photoURL || "",
     phone: matchedData.phone || "",
+    dob: matchedData.dob || "",
     bio: matchedData.bio || "",
     tradingPair: matchedData.tradingPair || "BTC/USDT",
     startingCapital: matchedData.startingCapital || "",
@@ -419,6 +457,12 @@ export async function loginUserInFirestore(
       handleFirestoreError(e, OperationType.WRITE, `users/${cleanEmailKey(user.email)}`);
     }
   }
+
+  // Save active user session
+  try {
+    localStorage.setItem("tradeplan_active_user", JSON.stringify(user));
+    recordDeviceRegistration(user.email, user.createdAt);
+  } catch (e) {}
 
   if (user.status === "revoked") {
     throw new Error("Access Revoked. Your access to this portal has been revoked by Host Admin.");

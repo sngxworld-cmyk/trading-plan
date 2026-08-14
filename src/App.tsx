@@ -6,10 +6,21 @@ import { UnderReviewModal } from "./components/UnderReviewModal";
 import { TradingApp } from "./components/TradingApp";
 import { RobotTutorialOverlay } from "./components/RobotTutorialOverlay";
 import { ProfileEditorModal } from "./components/ProfileEditorModal";
+import { CommunityChatHub } from "./components/CommunityChatHub";
+import { checkIsTrialExpired } from "./utils/deviceUtils";
 
 export default function App() {
-  // Active User session
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [activeView, setActiveView] = useState<"journal" | "community">("journal");
+
+  // Active User session loaded from localStorage if present
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
+    try {
+      const saved = localStorage.getItem("tradeplan_active_user");
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
 
   // Profile Editor Modal State
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -17,11 +28,14 @@ export default function App() {
   // Tutorial overlay state
   const [showTutorial, setShowTutorial] = useState(false);
 
-  // Clear persistent session tokens on startup so user enters gateway screen fresh
+  // Keep localStorage tradeplan_active_user in sync with currentUser state
   useEffect(() => {
-    localStorage.removeItem("tradeplan_active_user");
-    sessionStorage.removeItem("tradeplan_active_user");
-  }, []);
+    if (currentUser) {
+      try {
+        localStorage.setItem("tradeplan_active_user", JSON.stringify(currentUser));
+      } catch (e) {}
+    }
+  }, [currentUser]);
 
   // Check tutorial status whenever an approved user logs in
   useEffect(() => {
@@ -86,14 +100,22 @@ export default function App() {
     }
   };
 
-  // Auto-poll approval status every 3 seconds if client is pending review
+  // Calculate 5-Day Trial Status (strict device & user account check)
+  const isApprovedUser = currentUser?.status === "approved" || currentUser?.role === "admin" || currentUser?.email?.toLowerCase() === "sngxworld@gmail.com";
+  const isTrialExpired = !isApprovedUser && checkIsTrialExpired(currentUser);
+
+  // Auto-poll approval status every 3 seconds if user is awaiting host admin approval
   useEffect(() => {
-    if (!currentUser || currentUser.status !== "pending") return;
+    if (!currentUser || isApprovedUser) return;
     const interval = setInterval(handleRefreshStatus, 3000);
     return () => clearInterval(interval);
-  }, [currentUser?.email, currentUser?.status]);
+  }, [currentUser?.email, currentUser?.status, isApprovedUser]);
 
   const handleLogout = () => {
+    try {
+      localStorage.removeItem("tradeplan_active_user");
+      sessionStorage.removeItem("tradeplan_active_user");
+    } catch (e) {}
     setCurrentUser(null);
   };
 
@@ -111,7 +133,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-600 selection:text-white relative">
       {/* 3D Robot First-Login Interactive Tutorial Overlay */}
-      {showTutorial && (
+      {showTutorial && !isTrialExpired && (
         <RobotTutorialOverlay
           onComplete={handleFinishTutorial}
           onSkip={handleFinishTutorial}
@@ -125,6 +147,8 @@ export default function App() {
         onRefreshStatus={handleRefreshStatus}
         onReplayTutorial={handleReplayTutorial}
         onOpenProfile={() => setIsProfileOpen(true)}
+        activeView={activeView}
+        onToggleView={(v) => setActiveView(v)}
       />
 
       {/* Profile Editor Modal */}
@@ -143,29 +167,39 @@ export default function App() {
 
       {/* Main Content Area */}
       <div className="flex-1 relative animate-in fade-in slide-in-from-bottom-2 duration-500">
-        {/* If user status is pending (Under Review), show Modal overlay over blurred background */}
-        {currentUser.status === "pending" && (
+        {/* If 5-Day trial is expired and user is not approved, show Modal overlay over blurred background */}
+        {isTrialExpired && (
           <UnderReviewModal
             user={currentUser}
             onRefreshStatus={handleRefreshStatus}
             onLogout={handleLogout}
+            isTrialExpired={true}
           />
         )}
 
-        <main
-          className={`container max-w-7xl mx-auto px-4 sm:px-6 py-6 transition-all duration-300 ${
-            currentUser.status === "pending"
-              ? "opacity-30 blur-sm pointer-events-none select-none"
+        <div
+          className={`transition-all duration-300 ${
+            isTrialExpired
+              ? "opacity-25 blur-md pointer-events-none select-none overflow-hidden max-h-[calc(100vh-64px)]"
               : "opacity-100"
           }`}
         >
-          <TradingApp
-            user={currentUser}
-            onSaveDataToServer={() => {
-              // Saved data callback
-            }}
-          />
-        </main>
+          {activeView === "community" ? (
+            <CommunityChatHub
+              currentUser={currentUser}
+              onBackToApp={() => setActiveView("journal")}
+            />
+          ) : (
+            <main className="container max-w-7xl mx-auto px-4 sm:px-6 py-6">
+              <TradingApp
+                user={currentUser}
+                onSaveDataToServer={() => {
+                  // Saved data callback
+                }}
+              />
+            </main>
+          )}
+        </div>
       </div>
     </div>
   );

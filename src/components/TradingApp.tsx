@@ -9,7 +9,6 @@ import { saveUserDataToFirestore, subscribeUserDataFromFirestore } from "../lib/
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler, BarElement } from "chart.js";
 import { Line, Bar } from "react-chartjs-2";
 import { exportTradingPlanToExcel } from "../utils/excelExport";
-import { TradingPlanInspector } from "./TradingPlanInspector";
 import {
   Download,
   FileSpreadsheet,
@@ -35,6 +34,7 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Percent,
+  Trash2,
 } from "lucide-react";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend, Filler);
@@ -62,7 +62,7 @@ const MONTH_NAMES = [
 const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer }) => {
-  const [activeTab, setActiveTab] = useState<"grid" | "summary" | "goal" | "inspector">("grid");
+  const [activeTab, setActiveTab] = useState<"grid" | "summary" | "goal">("grid");
   const [summarySubTab, setSummarySubTab] = useState<"monthly" | "yearly" | "overall">("monthly");
   
   const [yearRange, setYearRange] = useState("2026");
@@ -175,19 +175,232 @@ export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer
     return currentStore[yearRange][selectedMonth] || {};
   }, [dataStore, yearRange, selectedMonth]);
 
+  const formatNumberString = (num: number): string => {
+    if (num === 0) return "0";
+    return Number(num.toFixed(3)).toString();
+  };
+
+  const recalculateMainDayRecord = (subTrades: DayRecord[]): DayRecord => {
+    let totalAmt = 0;
+    let totalRoi = 0;
+    let hasGreen = false;
+    let hasRed = false;
+
+    subTrades.forEach((st) => {
+      const amt = parseFloat(st.amount) || 0;
+      const r = parseFloat(st.roi) || 0;
+      if (st.state === "green") {
+        totalAmt += amt;
+        totalRoi += r;
+        hasGreen = true;
+      } else if (st.state === "red") {
+        totalAmt -= amt;
+        totalRoi -= r;
+        hasRed = true;
+      } else {
+        if (amt > 0) totalAmt += amt;
+        else if (amt < 0) totalAmt += amt;
+        if (r > 0) totalRoi += r;
+        else if (r < 0) totalRoi += r;
+      }
+    });
+
+    let state: "green" | "red" | "neutral" | "" = "";
+    if (totalAmt > 0) state = "green";
+    else if (totalAmt < 0) state = "red";
+    else if (subTrades.length > 0 && (hasGreen || hasRed)) state = "neutral";
+
+    const absAmt = Math.abs(totalAmt);
+    const absRoi = Math.abs(totalRoi);
+
+    const combinedDesc = subTrades
+      .map((st, i) => {
+        const txt = st.description ?? st.notes ?? "";
+        return txt ? `T${i + 1}: ${txt}` : "";
+      })
+      .filter(Boolean)
+      .join(" | ");
+
+    return {
+      state,
+      amount: absAmt > 0 ? formatNumberString(absAmt) : "0",
+      roi: absRoi > 0 ? formatNumberString(absRoi) : "0",
+      description: combinedDesc,
+      notes: combinedDesc,
+      subTrades,
+    };
+  };
+
   const updateDayRecord = (day: number, updates: Partial<DayRecord>) => {
     setDataStore((prev) => {
-      const next = { ...prev };
-      ensureRangeStore(next, yearRange);
-      const existing = next[yearRange][selectedMonth][day] || { state: "", amount: "", roi: "", description: "" };
-      next[yearRange][selectedMonth][day] = { ...existing, ...updates };
-      return { ...next };
+      const yearObj = prev[yearRange] ? { ...prev[yearRange] } : {};
+      const monthObj = yearObj[selectedMonth] ? { ...yearObj[selectedMonth] } : {};
+      const existing = monthObj[day] || { state: "", amount: "", roi: "", description: "" };
+
+      let updatedDay: DayRecord;
+      if (existing.subTrades && existing.subTrades.length > 1) {
+        const subTrades = [...existing.subTrades];
+        subTrades[0] = { ...subTrades[0], ...updates };
+        updatedDay = recalculateMainDayRecord(subTrades);
+      } else {
+        updatedDay = { ...existing, ...updates, subTrades: undefined };
+      }
+
+      return {
+        ...prev,
+        [yearRange]: {
+          ...yearObj,
+          [selectedMonth]: {
+            ...monthObj,
+            [day]: updatedDay,
+          },
+        },
+      };
+    });
+  };
+
+  const clearSingleDay = (day: number) => {
+    setDataStore((prev) => {
+      const yearObj = prev[yearRange] ? { ...prev[yearRange] } : {};
+      const monthObj = yearObj[selectedMonth] ? { ...yearObj[selectedMonth] } : {};
+
+      const updatedDay: DayRecord = {
+        state: "",
+        amount: "",
+        roi: "",
+        description: "",
+        notes: "",
+        subTrades: undefined,
+      };
+
+      return {
+        ...prev,
+        [yearRange]: {
+          ...yearObj,
+          [selectedMonth]: {
+            ...monthObj,
+            [day]: updatedDay,
+          },
+        },
+      };
     });
   };
 
   const setRowState = (day: number, state: "green" | "red" | "") => {
     updateDayRecord(day, { state });
     setActivePopupDay(null);
+  };
+
+  const addSubTrade = (day: number) => {
+    setDataStore((prev) => {
+      const yearObj = prev[yearRange] ? { ...prev[yearRange] } : {};
+      const monthObj = yearObj[selectedMonth] ? { ...yearObj[selectedMonth] } : {};
+      const existing = monthObj[day] || { state: "", amount: "", roi: "", description: "" };
+
+      let subTrades: DayRecord[];
+      if (!existing.subTrades || existing.subTrades.length < 2) {
+        const initialTrade: DayRecord = {
+          state: existing.state || "",
+          amount: existing.amount || "",
+          roi: existing.roi || "",
+          description: existing.description || existing.notes || "",
+        };
+        const secondTrade: DayRecord = { state: "", amount: "", roi: "", description: "" };
+        subTrades = [initialTrade, secondTrade];
+      } else {
+        subTrades = [
+          ...existing.subTrades,
+          { state: "", amount: "", roi: "", description: "" },
+        ];
+      }
+
+      const updatedDay = recalculateMainDayRecord(subTrades);
+
+      return {
+        ...prev,
+        [yearRange]: {
+          ...yearObj,
+          [selectedMonth]: {
+            ...monthObj,
+            [day]: updatedDay,
+          },
+        },
+      };
+    });
+  };
+
+  const updateSubTrade = (day: number, tradeIdx: number, updates: Partial<DayRecord>) => {
+    setDataStore((prev) => {
+      const yearObj = prev[yearRange] ? { ...prev[yearRange] } : {};
+      const monthObj = yearObj[selectedMonth] ? { ...yearObj[selectedMonth] } : {};
+      const existing = monthObj[day] || { state: "", amount: "", roi: "", description: "" };
+
+      const subTrades = existing.subTrades ? [...existing.subTrades] : [];
+      if (!subTrades[tradeIdx]) return prev;
+
+      subTrades[tradeIdx] = { ...subTrades[tradeIdx], ...updates };
+
+      const updatedDay = recalculateMainDayRecord(subTrades);
+
+      return {
+        ...prev,
+        [yearRange]: {
+          ...yearObj,
+          [selectedMonth]: {
+            ...monthObj,
+            [day]: updatedDay,
+          },
+        },
+      };
+    });
+  };
+
+  const removeSubTrade = (day: number, tradeIdx: number) => {
+    setDataStore((prev) => {
+      const yearObj = prev[yearRange] ? { ...prev[yearRange] } : {};
+      const monthObj = yearObj[selectedMonth] ? { ...yearObj[selectedMonth] } : {};
+      const existing = monthObj[day] || { state: "", amount: "", roi: "", description: "" };
+
+      let subTrades = existing.subTrades ? [...existing.subTrades] : [];
+      if (tradeIdx >= 0 && tradeIdx < subTrades.length) {
+        subTrades.splice(tradeIdx, 1);
+      }
+
+      let updatedDay: DayRecord;
+      if (subTrades.length > 1) {
+        updatedDay = recalculateMainDayRecord(subTrades);
+      } else if (subTrades.length === 1) {
+        const remaining = subTrades[0];
+        updatedDay = {
+          state: remaining.state || "",
+          amount: remaining.amount || "",
+          roi: remaining.roi || "",
+          description: remaining.description || remaining.notes || "",
+          notes: remaining.description || remaining.notes || "",
+          subTrades: undefined,
+        };
+      } else {
+        updatedDay = {
+          state: "",
+          amount: "",
+          roi: "",
+          description: "",
+          notes: "",
+          subTrades: undefined,
+        };
+      }
+
+      return {
+        ...prev,
+        [yearRange]: {
+          ...yearObj,
+          [selectedMonth]: {
+            ...monthObj,
+            [day]: updatedDay,
+          },
+        },
+      };
+    });
   };
 
   // Comprehensive Metrics Engine (Monthly, Yearly, Overall All-Time)
@@ -518,17 +731,6 @@ export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer
         >
           <Target className="w-4 h-4" /> Trading Goal
         </button>
-
-        <button
-          onClick={() => setActiveTab("inspector")}
-          className={`flex items-center gap-2 px-4 sm:px-6 py-3 rounded-t-xl font-bold text-xs sm:text-sm transition-all border-t border-x shrink-0 whitespace-nowrap ${
-            activeTab === "inspector"
-              ? "bg-slate-900 border-slate-800 text-indigo-400 border-b-2 border-b-indigo-500 shadow-xl"
-              : "bg-slate-950 border-transparent text-slate-500 hover:text-slate-300"
-          }`}
-        >
-          <Activity className="w-4 h-4 text-emerald-400" /> Trading Plan Inspector
-        </button>
       </div>
 
       {/* PANEL 1: DATA SHEET GRID */}
@@ -603,6 +805,8 @@ export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer
               const dayRec = currentMonthData[day] || { state: "", amount: "", roi: "", description: "" };
               const paddedDay = String(day).padStart(2, "0");
               const paddedMonth = String(selectedMonth + 1).padStart(2, "0");
+              const hasSubTrades = dayRec.subTrades && dayRec.subTrades.length > 1;
+              const hasData = Boolean(dayRec.amount || dayRec.roi || dayRec.state || dayRec.description || dayRec.notes);
 
               return (
                 <div
@@ -620,7 +824,12 @@ export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer
                       <span className="text-xs font-bold font-mono text-slate-300 bg-slate-900 border border-slate-800 px-2.5 py-1 rounded-lg">
                         {paddedDay}/{paddedMonth}
                       </span>
-                      {dayRec.state && (
+                      {hasSubTrades && (
+                        <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                          {dayRec.subTrades!.length} TRADES
+                        </span>
+                      )}
+                      {!hasSubTrades && dayRec.state && (
                         <span
                           className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded uppercase ${
                             dayRec.state === "green"
@@ -633,97 +842,194 @@ export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer
                       )}
                     </div>
 
-                    {/* Quick Touch Win / Loss Buttons */}
                     <div className="flex items-center gap-1.5">
                       <button
-                        onClick={() => setRowState(day, dayRec.state === "green" ? "" : "green")}
-                        className={`w-9 h-9 rounded-xl font-black text-sm flex items-center justify-center transition-all active:scale-95 ${
-                          dayRec.state === "green"
-                            ? "bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/30"
-                            : "bg-slate-900 text-slate-400 border border-slate-800 hover:text-emerald-400"
-                        }`}
-                        title="Mark Green (Win)"
+                        onClick={() => addSubTrade(day)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs font-bold shadow-md shadow-indigo-600/30 transition-all active:scale-95"
+                        title="Add another trade for this day"
                       >
-                        +
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>+ Add</span>
                       </button>
-                      <button
-                        onClick={() => setRowState(day, dayRec.state === "red" ? "" : "red")}
-                        className={`w-9 h-9 rounded-xl font-black text-sm flex items-center justify-center transition-all active:scale-95 ${
-                          dayRec.state === "red"
-                            ? "bg-rose-500 text-white shadow-md shadow-rose-500/30"
-                            : "bg-slate-900 text-slate-400 border border-slate-800 hover:text-rose-400"
-                        }`}
-                        title="Mark Red (Loss)"
-                      >
-                        -
-                      </button>
-                      {dayRec.state && (
+
+                      {hasData && (
                         <button
-                          onClick={() => setRowState(day, "")}
-                          className="w-8 h-8 rounded-xl bg-slate-800 text-slate-400 text-xs flex items-center justify-center border border-slate-700"
-                          title="Clear Status"
+                          onClick={() => clearSingleDay(day)}
+                          className="p-1 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500 hover:text-white border border-rose-500/20 transition-all"
+                          title="Delete/Clear all data for this day"
                         >
-                          ✕
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       )}
                     </div>
                   </div>
 
-                  {/* Amount & ROI Inputs */}
-                  <div className="grid grid-cols-2 gap-2 mb-2">
-                    <div>
-                      <label className="text-[10px] text-slate-500 font-mono uppercase block mb-1">
-                        Amount (USDT)
-                      </label>
-                      <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5">
-                        <span className="text-slate-500 font-bold text-xs">
+                  {hasSubTrades ? (
+                    <div className="space-y-2.5">
+                      <div className="bg-slate-900/90 border border-indigo-500/30 p-2 rounded-lg flex items-center justify-between text-xs font-mono">
+                        <span className="text-indigo-300 font-bold">Daily Aggregated Total:</span>
+                        <span className="text-white font-bold">
                           {dayRec.state === "green" ? "+" : dayRec.state === "red" ? "-" : ""}
+                          ${dayRec.amount || "0"} ({dayRec.roi || "0"}%)
                         </span>
+                      </div>
+
+                      {dayRec.subTrades!.map((sub, subIdx) => (
+                        <div key={`mob-sub-${day}-${subIdx}`} className="bg-slate-900/80 border border-slate-800 p-2.5 rounded-lg space-y-2">
+                          <div className="flex items-center justify-between text-xs font-mono">
+                            <span className="text-indigo-400 font-bold">Trade #{subIdx + 1}</span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => updateSubTrade(day, subIdx, { state: sub.state === "green" ? "" : "green" })}
+                                className={`w-7 h-7 rounded border font-bold text-xs flex items-center justify-center ${
+                                  sub.state === "green" ? "bg-emerald-500 text-slate-950 font-extrabold" : "bg-slate-950 text-slate-400 border-slate-800"
+                                }`}
+                              >
+                                +
+                              </button>
+                              <button
+                                onClick={() => updateSubTrade(day, subIdx, { state: sub.state === "red" ? "" : "red" })}
+                                className={`w-7 h-7 rounded border font-bold text-xs flex items-center justify-center ${
+                                  sub.state === "red" ? "bg-rose-500 text-white font-extrabold" : "bg-slate-950 text-slate-400 border-slate-800"
+                                }`}
+                              >
+                                -
+                              </button>
+                              <button
+                                onClick={() => removeSubTrade(day, subIdx)}
+                                className="w-7 h-7 rounded bg-rose-500/10 text-rose-400 flex items-center justify-center border border-rose-500/20 hover:bg-rose-500 hover:text-white transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-[9px] text-slate-500 uppercase block font-mono">Amount (USDT)</label>
+                              <input
+                                type="number"
+                                placeholder="0.000"
+                                value={sub.amount}
+                                onChange={(e) => updateSubTrade(day, subIdx, { amount: e.target.value })}
+                                className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-white font-mono focus:outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[9px] text-slate-500 uppercase block font-mono">ROI (%)</label>
+                              <input
+                                type="number"
+                                placeholder="0.00"
+                                value={sub.roi}
+                                onChange={(e) => updateSubTrade(day, subIdx, { roi: e.target.value })}
+                                className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-white font-mono focus:outline-none"
+                              />
+                            </div>
+                          </div>
+
+                          <input
+                            type="text"
+                            placeholder="Trade notes..."
+                            value={sub.description ?? sub.notes ?? ""}
+                            onChange={(e) => updateSubTrade(day, subIdx, { description: e.target.value, notes: e.target.value })}
+                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-white font-mono focus:outline-none"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => setRowState(day, dayRec.state === "green" ? "" : "green")}
+                            className={`w-9 h-9 rounded-xl font-black text-sm flex items-center justify-center transition-all active:scale-95 ${
+                              dayRec.state === "green"
+                                ? "bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/30"
+                                : "bg-slate-900 text-slate-400 border border-slate-800 hover:text-emerald-400"
+                            }`}
+                            title="Mark Green (Win)"
+                          >
+                            +
+                          </button>
+                          <button
+                            onClick={() => setRowState(day, dayRec.state === "red" ? "" : "red")}
+                            className={`w-9 h-9 rounded-xl font-black text-sm flex items-center justify-center transition-all active:scale-95 ${
+                              dayRec.state === "red"
+                                ? "bg-rose-500 text-white shadow-md shadow-rose-500/30"
+                                : "bg-slate-900 text-slate-400 border border-slate-800 hover:text-rose-400"
+                            }`}
+                            title="Mark Red (Loss)"
+                          >
+                            -
+                          </button>
+                          {dayRec.state && (
+                            <button
+                              onClick={() => setRowState(day, "")}
+                              className="w-8 h-8 rounded-xl bg-slate-800 text-slate-400 text-xs flex items-center justify-center border border-slate-700"
+                              title="Clear Status"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 mb-2">
+                        <div>
+                          <label className="text-[10px] text-slate-500 font-mono uppercase block mb-1">
+                            Amount (USDT)
+                          </label>
+                          <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5">
+                            <span className="text-slate-500 font-bold text-xs">
+                              {dayRec.state === "green" ? "+" : dayRec.state === "red" ? "-" : ""}
+                            </span>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              step="0.001"
+                              placeholder="0.000"
+                              value={dayRec.amount}
+                              onChange={(e) => updateDayRecord(day, { amount: e.target.value })}
+                              className="bg-transparent border-none text-right w-full text-slate-100 font-mono text-xs focus:outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] text-slate-500 font-mono uppercase block mb-1">
+                            ROI (%)
+                          </label>
+                          <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5">
+                            <span className="text-slate-500 font-bold text-xs">
+                              {dayRec.state === "green" ? "+" : dayRec.state === "red" ? "-" : ""}
+                            </span>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              step="0.01"
+                              placeholder="0.00"
+                              value={dayRec.roi}
+                              onChange={(e) => updateDayRecord(day, { roi: e.target.value })}
+                              className="bg-transparent border-none text-right w-full text-slate-100 font-mono text-xs focus:outline-none"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
                         <input
-                          type="number"
-                          inputMode="decimal"
-                          step="0.001"
-                          placeholder="0.000"
-                          value={dayRec.amount}
-                          onChange={(e) => updateDayRecord(day, { amount: e.target.value })}
-                          className="bg-transparent border-none text-right w-full text-slate-100 font-mono text-xs focus:outline-none"
+                          type="text"
+                          placeholder="Trade notes (e.g. BTC 1h OB retest, TP hit...)"
+                          value={dayRec.description ?? dayRec.notes ?? ""}
+                          onChange={(e) =>
+                            updateDayRecord(day, { description: e.target.value, notes: e.target.value })
+                          }
+                          className="w-full bg-slate-900 border border-slate-800 focus:border-indigo-500/60 rounded-lg px-3 py-1.5 text-xs font-mono text-slate-200 placeholder:text-slate-600 focus:outline-none"
                         />
                       </div>
-                    </div>
-
-                    <div>
-                      <label className="text-[10px] text-slate-500 font-mono uppercase block mb-1">
-                        ROI (%)
-                      </label>
-                      <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5">
-                        <span className="text-slate-500 font-bold text-xs">
-                          {dayRec.state === "green" ? "+" : dayRec.state === "red" ? "-" : ""}
-                        </span>
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          step="0.01"
-                          placeholder="0.00"
-                          value={dayRec.roi}
-                          onChange={(e) => updateDayRecord(day, { roi: e.target.value })}
-                          className="bg-transparent border-none text-right w-full text-slate-100 font-mono text-xs focus:outline-none"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Description Input */}
-                  <div>
-                    <input
-                      type="text"
-                      placeholder="Trade notes (e.g. BTC 1h OB retest, TP hit...)"
-                      value={dayRec.description ?? dayRec.notes ?? ""}
-                      onChange={(e) =>
-                        updateDayRecord(day, { description: e.target.value, notes: e.target.value })
-                      }
-                      className="w-full bg-slate-900 border border-slate-800 focus:border-indigo-500/60 rounded-lg px-3 py-1.5 text-xs font-mono text-slate-200 placeholder:text-slate-600 focus:outline-none"
-                    />
-                  </div>
+                    </>
+                  )}
                 </div>
               );
             })}
@@ -731,14 +1037,15 @@ export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer
 
           {/* DESKTOP TABLE VIEW (>= md screens) */}
           <div className="hidden md:block overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[700px]">
+            <table className="w-full text-left border-collapse min-w-[750px]">
               <thead>
                 <tr className="bg-slate-950 border-b border-slate-800 text-[10px] font-mono text-slate-400 uppercase tracking-wider">
-                  <th className="p-3 w-20">Date</th>
+                  <th className="p-3 w-24">Date</th>
                   <th className="p-3 w-16 text-center">P/L</th>
                   <th className="p-3 w-40">Amount (USDT)</th>
                   <th className="p-3 w-36">ROI (%)</th>
                   <th className="p-3">Trade Description & Setup Notes</th>
+                  <th className="p-3 w-28 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-mono text-xs">
@@ -746,116 +1053,295 @@ export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer
                   const dayRec = currentMonthData[day] || { state: "", amount: "", roi: "", description: "" };
                   const paddedDay = String(day).padStart(2, "0");
                   const paddedMonth = String(selectedMonth + 1).padStart(2, "0");
+                  const hasSubTrades = dayRec.subTrades && dayRec.subTrades.length > 1;
+                  const hasData = Boolean(dayRec.amount || dayRec.roi || dayRec.state || dayRec.description || dayRec.notes);
 
                   return (
-                    <tr
-                      key={day}
-                      className={`hover:bg-slate-800/40 transition-colors ${
-                        dayRec.state === "green"
-                          ? "bg-emerald-500/5 text-emerald-400"
-                          : dayRec.state === "red"
-                          ? "bg-rose-500/5 text-rose-400"
-                          : ""
-                      }`}
-                    >
-                      <td className="p-3 font-semibold text-slate-300 whitespace-nowrap">
-                        {paddedDay}/{paddedMonth}
-                      </td>
-
-                      {/* Win / Loss State Button */}
-                      <td className="p-3 text-center relative">
-                        <button
-                          onClick={() => setActivePopupDay(activePopupDay === day ? null : day)}
-                          className={`w-8 h-8 rounded-lg border flex items-center justify-center mx-auto transition-transform active:scale-95 shadow-sm ${
-                            dayRec.state === "green"
-                              ? "bg-emerald-500 border-emerald-400 text-slate-950 font-extrabold text-sm"
-                              : dayRec.state === "red"
-                              ? "bg-rose-500 border-rose-400 text-white font-extrabold text-sm"
-                              : "border-slate-700 hover:border-slate-500 bg-slate-950 text-slate-500"
-                          }`}
-                        >
-                          {dayRec.state === "green" ? "+" : dayRec.state === "red" ? "-" : ""}
-                        </button>
-
-                        {/* State selector popup */}
-                        {activePopupDay === day && (
-                          <div className="absolute top-10 left-1/2 -translate-x-1/2 bg-slate-900 border border-slate-700 rounded-xl p-2 z-30 shadow-2xl flex items-center gap-2">
-                            <button
-                              onClick={() => setRowState(day, "green")}
-                              className="w-8 h-8 bg-emerald-500 rounded-lg text-slate-950 font-bold flex items-center justify-center hover:scale-105 text-sm"
-                              title="Win (+ Green)"
-                            >
-                              +
-                            </button>
-                            <button
-                              onClick={() => setRowState(day, "red")}
-                              className="w-8 h-8 bg-rose-500 rounded-lg text-white font-bold flex items-center justify-center hover:scale-105 text-sm"
-                              title="Loss (- Red)"
-                            >
-                              -
-                            </button>
-                            <button
-                              onClick={() => setRowState(day, "")}
-                              className="w-8 h-8 bg-slate-700 rounded-lg text-slate-300 text-xs flex items-center justify-center hover:scale-105"
-                              title="Clear Row State"
-                            >
-                              ✕
-                            </button>
+                    <React.Fragment key={day}>
+                      {/* MAIN ROW FOR THE DAY */}
+                      <tr
+                        className={`hover:bg-slate-800/40 transition-colors ${
+                          dayRec.state === "green"
+                            ? "bg-emerald-500/5 text-emerald-400"
+                            : dayRec.state === "red"
+                            ? "bg-rose-500/5 text-rose-400"
+                            : ""
+                        } ${hasSubTrades ? "border-b-0 font-semibold" : ""}`}
+                      >
+                        <td className="p-3 font-semibold text-slate-300 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5">
+                            <span>{paddedDay}/{paddedMonth}</span>
+                            {hasSubTrades && (
+                              <span className="text-[9px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.5 rounded uppercase font-mono">
+                                Total ({dayRec.subTrades!.length})
+                              </span>
+                            )}
                           </div>
-                        )}
-                      </td>
+                        </td>
 
-                      {/* Amount Input */}
-                      <td className="p-3">
-                        <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 max-w-[160px]">
-                          <span className="text-slate-500 font-bold text-xs">
-                            {dayRec.state === "green" ? "+" : dayRec.state === "red" ? "-" : ""}
-                          </span>
+                        {/* Win / Loss State Button */}
+                        <td className="p-3 text-center relative">
+                          {hasSubTrades ? (
+                            <div
+                              className={`w-8 h-8 rounded-lg border flex items-center justify-center mx-auto shadow-sm font-extrabold text-sm ${
+                                dayRec.state === "green"
+                                  ? "bg-emerald-500 border-emerald-400 text-slate-950"
+                                  : dayRec.state === "red"
+                                  ? "bg-rose-500 border-rose-400 text-white"
+                                  : "border-slate-700 bg-slate-900 text-slate-400"
+                              }`}
+                              title="Aggregated Daily P/L"
+                            >
+                              {dayRec.state === "green" ? "+" : dayRec.state === "red" ? "-" : "—"}
+                            </div>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => setActivePopupDay(activePopupDay === day ? null : day)}
+                                className={`w-8 h-8 rounded-lg border flex items-center justify-center mx-auto transition-transform active:scale-95 shadow-sm ${
+                                  dayRec.state === "green"
+                                    ? "bg-emerald-500 border-emerald-400 text-slate-950 font-extrabold text-sm"
+                                    : dayRec.state === "red"
+                                    ? "bg-rose-500 border-rose-400 text-white font-extrabold text-sm"
+                                    : "border-slate-700 hover:border-slate-500 bg-slate-950 text-slate-500"
+                                }`}
+                              >
+                                {dayRec.state === "green" ? "+" : dayRec.state === "red" ? "-" : ""}
+                              </button>
+
+                              {activePopupDay === day && (
+                                <div className="absolute top-10 left-1/2 -translate-x-1/2 bg-slate-900 border border-slate-700 rounded-xl p-2 z-30 shadow-2xl flex items-center gap-2">
+                                  <button
+                                    onClick={() => setRowState(day, "green")}
+                                    className="w-8 h-8 bg-emerald-500 rounded-lg text-slate-950 font-bold flex items-center justify-center hover:scale-105 text-sm"
+                                    title="Win (+ Green)"
+                                  >
+                                    +
+                                  </button>
+                                  <button
+                                    onClick={() => setRowState(day, "red")}
+                                    className="w-8 h-8 bg-rose-500 rounded-lg text-white font-bold flex items-center justify-center hover:scale-105 text-sm"
+                                    title="Loss (- Red)"
+                                  >
+                                    -
+                                  </button>
+                                  <button
+                                    onClick={() => setRowState(day, "")}
+                                    className="w-8 h-8 bg-slate-700 rounded-lg text-slate-300 text-xs flex items-center justify-center hover:scale-105"
+                                    title="Clear Row State"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </td>
+
+                        {/* Amount Display / Input */}
+                        <td className="p-3">
+                          {hasSubTrades ? (
+                            <div className="flex items-center gap-1.5 bg-slate-950/80 border border-indigo-500/40 rounded-lg px-2.5 py-1.5 max-w-[160px]">
+                              <span className="text-indigo-400 font-bold text-xs">
+                                {dayRec.state === "green" ? "+" : dayRec.state === "red" ? "-" : ""}
+                              </span>
+                              <span className="font-mono font-bold text-xs text-white ml-auto">
+                                {dayRec.amount || "0"}
+                              </span>
+                              <span className="text-[10px] text-indigo-300 uppercase font-mono">USDT</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 max-w-[160px]">
+                              <span className="text-slate-500 font-bold text-xs">
+                                {dayRec.state === "green" ? "+" : dayRec.state === "red" ? "-" : ""}
+                              </span>
+                              <input
+                                type="number"
+                                inputMode="decimal"
+                                step="0.001"
+                                placeholder="0.000"
+                                value={dayRec.amount}
+                                onChange={(e) => updateDayRecord(day, { amount: e.target.value })}
+                                className="bg-transparent border-none text-right w-full text-slate-100 focus:outline-none"
+                              />
+                              <span className="text-[10px] text-slate-500 uppercase">USDT</span>
+                            </div>
+                          )}
+                        </td>
+
+                        {/* ROI Display / Input */}
+                        <td className="p-3">
+                          {hasSubTrades ? (
+                            <div className="flex items-center gap-1.5 bg-slate-950/80 border border-indigo-500/40 rounded-lg px-2.5 py-1.5 max-w-[140px]">
+                              <span className="text-indigo-400 font-bold text-xs">
+                                {dayRec.state === "green" ? "+" : dayRec.state === "red" ? "-" : ""}
+                              </span>
+                              <span className="font-mono font-bold text-xs text-white ml-auto">
+                                {dayRec.roi || "0"}
+                              </span>
+                              <span className="text-[10px] text-indigo-300 font-mono">%</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 max-w-[140px]">
+                              <span className="text-slate-500 font-bold text-xs">
+                                {dayRec.state === "green" ? "+" : dayRec.state === "red" ? "-" : ""}
+                              </span>
+                              <input
+                                type="number"
+                                inputMode="decimal"
+                                step="0.01"
+                                placeholder="0.00"
+                                value={dayRec.roi}
+                                onChange={(e) => updateDayRecord(day, { roi: e.target.value })}
+                                className="bg-transparent border-none text-right w-full text-slate-100 focus:outline-none"
+                              />
+                              <span className="text-[10px] text-slate-500">%</span>
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Trade Description Input */}
+                        <td className="p-3">
                           <input
-                            type="number"
-                            inputMode="decimal"
-                            step="0.001"
-                            placeholder="0.000"
-                            value={dayRec.amount}
-                            onChange={(e) => updateDayRecord(day, { amount: e.target.value })}
-                            className="bg-transparent border-none text-right w-full text-slate-100 focus:outline-none"
+                            type="text"
+                            placeholder="e.g. BTC 1h Order Block retest, TP 2.5:1 hit..."
+                            value={dayRec.description ?? dayRec.notes ?? ""}
+                            onChange={(e) =>
+                              updateDayRecord(day, { description: e.target.value, notes: e.target.value })
+                            }
+                            className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500/60 rounded-lg px-3 py-1.5 text-xs font-mono text-slate-200 placeholder:text-slate-600 focus:outline-none transition-colors"
                           />
-                          <span className="text-[10px] text-slate-500 uppercase">USDT</span>
-                        </div>
-                      </td>
+                        </td>
 
-                      {/* ROI Input */}
-                      <td className="p-3">
-                        <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 max-w-[140px]">
-                          <span className="text-slate-500 font-bold text-xs">
-                            {dayRec.state === "green" ? "+" : dayRec.state === "red" ? "-" : ""}
-                          </span>
-                          <input
-                            type="number"
-                            inputMode="decimal"
-                            step="0.01"
-                            placeholder="0.00"
-                            value={dayRec.roi}
-                            onChange={(e) => updateDayRecord(day, { roi: e.target.value })}
-                            className="bg-transparent border-none text-right w-full text-slate-100 focus:outline-none"
-                          />
-                          <span className="text-[10px] text-slate-500">%</span>
-                        </div>
-                      </td>
+                        {/* Right Corner Action Buttons (+ Add & Trash) */}
+                        <td className="p-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => addSubTrade(day)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs font-bold shadow-md shadow-indigo-600/30 transition-all active:scale-95 whitespace-nowrap"
+                              title="Add another trade line for this day"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>Add</span>
+                            </button>
 
-                      {/* Trade Description Input */}
-                      <td className="p-3">
-                        <input
-                          type="text"
-                          placeholder="e.g. BTC 1h Order Block retest, TP 2.5:1 hit, Risk 2%..."
-                          value={dayRec.description ?? dayRec.notes ?? ""}
-                          onChange={(e) =>
-                            updateDayRecord(day, { description: e.target.value, notes: e.target.value })
-                          }
-                          className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500/60 rounded-lg px-3 py-1.5 text-xs font-mono text-slate-200 placeholder:text-slate-600 focus:outline-none transition-colors"
-                        />
-                      </td>
-                    </tr>
+                            {hasData && (
+                              <button
+                                onClick={() => clearSingleDay(day)}
+                                className="p-1.5 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500 hover:text-white border border-rose-500/20 transition-all inline-flex items-center justify-center"
+                                title="Clear/Delete all trade data for this day"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+
+                      {/* SUB-TRADE LINES UNDER THIS DAY */}
+                      {hasSubTrades &&
+                        dayRec.subTrades!.map((sub, subIdx) => (
+                          <tr
+                            key={`sub-${day}-${subIdx}`}
+                            className="bg-slate-950/80 border-b border-slate-800/40 text-xs font-mono transition-colors hover:bg-slate-900/80"
+                          >
+                            <td className="p-2.5 pl-6 font-medium text-slate-400 whitespace-nowrap flex items-center gap-1.5">
+                              <span className="text-indigo-400 font-bold">└</span>
+                              <span className="bg-slate-900 border border-slate-800 text-[10px] text-indigo-300 font-bold px-2 py-0.5 rounded">
+                                Trade #{subIdx + 1}
+                              </span>
+                            </td>
+
+                            {/* Sub-Trade Win/Loss Toggle */}
+                            <td className="p-2.5 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  onClick={() => updateSubTrade(day, subIdx, { state: sub.state === "green" ? "" : "green" })}
+                                  className={`w-6 h-6 rounded border font-bold text-xs flex items-center justify-center transition-all ${
+                                    sub.state === "green"
+                                      ? "bg-emerald-500 border-emerald-400 text-slate-950 font-extrabold"
+                                      : "border-slate-800 bg-slate-900 text-slate-500 hover:text-emerald-400"
+                                  }`}
+                                  title="Win (+ Green)"
+                                >
+                                  +
+                                </button>
+                                <button
+                                  onClick={() => updateSubTrade(day, subIdx, { state: sub.state === "red" ? "" : "red" })}
+                                  className={`w-6 h-6 rounded border font-bold text-xs flex items-center justify-center transition-all ${
+                                    sub.state === "red"
+                                      ? "bg-rose-500 border-rose-400 text-white font-extrabold"
+                                      : "border-slate-800 bg-slate-900 text-slate-500 hover:text-rose-400"
+                                  }`}
+                                  title="Loss (- Red)"
+                                >
+                                  -
+                                </button>
+                              </div>
+                            </td>
+
+                            {/* Sub-Trade Amount Input */}
+                            <td className="p-2.5">
+                              <div className="flex items-center gap-1 bg-slate-900 border border-slate-800/80 rounded-lg px-2 py-1 max-w-[160px]">
+                                <span className="text-slate-500 font-bold text-xs">
+                                  {sub.state === "green" ? "+" : sub.state === "red" ? "-" : ""}
+                                </span>
+                                <input
+                                  type="number"
+                                  inputMode="decimal"
+                                  step="0.001"
+                                  placeholder="0.000"
+                                  value={sub.amount}
+                                  onChange={(e) => updateSubTrade(day, subIdx, { amount: e.target.value })}
+                                  className="bg-transparent border-none text-right w-full text-slate-100 text-xs focus:outline-none"
+                                />
+                                <span className="text-[9px] text-slate-500 uppercase">USDT</span>
+                              </div>
+                            </td>
+
+                            {/* Sub-Trade ROI Input */}
+                            <td className="p-2.5">
+                              <div className="flex items-center gap-1 bg-slate-900 border border-slate-800/80 rounded-lg px-2 py-1 max-w-[140px]">
+                                <span className="text-slate-500 font-bold text-xs">
+                                  {sub.state === "green" ? "+" : sub.state === "red" ? "-" : ""}
+                                </span>
+                                <input
+                                  type="number"
+                                  inputMode="decimal"
+                                  step="0.01"
+                                  placeholder="0.00"
+                                  value={sub.roi}
+                                  onChange={(e) => updateSubTrade(day, subIdx, { roi: e.target.value })}
+                                  className="bg-transparent border-none text-right w-full text-slate-100 text-xs focus:outline-none"
+                                />
+                                <span className="text-[9px] text-slate-500">%</span>
+                              </div>
+                            </td>
+
+                            {/* Sub-Trade Description Input */}
+                            <td className="p-2.5">
+                              <input
+                                type="text"
+                                placeholder={`Trade #${subIdx + 1} notes (e.g. BTC Long OB retest, TP hit...)`}
+                                value={sub.description ?? sub.notes ?? ""}
+                                onChange={(e) => updateSubTrade(day, subIdx, { description: e.target.value, notes: e.target.value })}
+                                className="w-full bg-slate-900 border border-slate-800/80 focus:border-indigo-500/60 rounded-lg px-2.5 py-1 text-xs font-mono text-slate-200 placeholder:text-slate-600 focus:outline-none"
+                              />
+                            </td>
+
+                            {/* Sub-Trade Delete Button */}
+                            <td className="p-2.5 text-right">
+                              <button
+                                onClick={() => removeSubTrade(day, subIdx)}
+                                className="p-1 rounded bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white border border-rose-500/20 transition-all inline-flex items-center justify-center"
+                                title="Delete this trade entry"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                    </React.Fragment>
                   );
                 })}
               </tbody>
@@ -1410,15 +1896,6 @@ export const TradingApp: React.FC<TradingAppProps> = ({ user, onSaveDataToServer
             </div>
           </div>
         </div>
-      )}
-
-      {/* PANEL 4: TRADING PLAN INSPECTOR */}
-      {activeTab === "inspector" && (
-        <TradingPlanInspector
-          user={user}
-          dataStore={dataStore}
-          startingCapital={startingCapital}
-        />
       )}
     </div>
   );
