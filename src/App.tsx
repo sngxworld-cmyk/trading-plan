@@ -12,14 +12,13 @@ import { checkIsTrialExpired } from "./utils/deviceUtils";
 export default function App() {
   const [activeView, setActiveView] = useState<"journal" | "community">("journal");
 
-  // Active User session loaded from localStorage if present
+  // Ephemeral active session: Always requires login on page refresh or tab close
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
     try {
-      const saved = localStorage.getItem("tradeplan_active_user");
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
+      localStorage.removeItem("tradeplan_active_user");
+      sessionStorage.removeItem("tradeplan_active_user");
+    } catch {}
+    return null;
   });
 
   // Profile Editor Modal State
@@ -28,14 +27,13 @@ export default function App() {
   // Tutorial overlay state
   const [showTutorial, setShowTutorial] = useState(false);
 
-  // Keep localStorage tradeplan_active_user in sync with currentUser state
+  // Ensure active session is never persisted across browser refresh/reopen
   useEffect(() => {
-    if (currentUser) {
-      try {
-        localStorage.setItem("tradeplan_active_user", JSON.stringify(currentUser));
-      } catch (e) {}
-    }
-  }, [currentUser]);
+    try {
+      localStorage.removeItem("tradeplan_active_user");
+      sessionStorage.removeItem("tradeplan_active_user");
+    } catch {}
+  }, []);
 
   // Check tutorial status whenever an approved user logs in
   useEffect(() => {

@@ -307,11 +307,7 @@ export async function updateUserProfileInFirestore(
     tradingData: updatedRecord.tradingData || null,
   };
 
-  // Save updated active user session
-  try {
-    localStorage.setItem("tradeplan_active_user", JSON.stringify(updatedUser));
-  } catch (e) {}
-
+  // Update record
   return updatedUser;
 }
 
@@ -458,9 +454,8 @@ export async function loginUserInFirestore(
     }
   }
 
-  // Save active user session
+  // Device registration check (transient active session)
   try {
-    localStorage.setItem("tradeplan_active_user", JSON.stringify(user));
     recordDeviceRegistration(user.email, user.createdAt);
   } catch (e) {}
 
