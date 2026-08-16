@@ -117,6 +117,7 @@ export async function registerUserInFirestore(params: {
   dob?: string;
   bio?: string;
   tradingPair?: string;
+  tradingMarket?: string;
   startingCapital?: string;
 }): Promise<User> {
   const cleanEmail = cleanEmailKey(params.email);
@@ -170,7 +171,8 @@ export async function registerUserInFirestore(params: {
     phone: params.phone?.trim() || "",
     dob: params.dob?.trim() || "",
     bio: params.bio?.trim() || "",
-    tradingPair: params.tradingPair?.trim() || "BTC/USDT",
+    tradingPair: params.tradingMarket || params.tradingPair?.trim() || "Crypto Market",
+    tradingMarket: params.tradingMarket || params.tradingPair?.trim() || "Crypto Market",
     startingCapital: params.startingCapital?.trim() || "",
     role,
     status,
@@ -210,7 +212,7 @@ export async function registerUserInFirestore(params: {
       body: JSON.stringify({
         ...params,
         deviceId: getDeviceId(),
-        isMasterDevice: cleanEmail === "sngxworld@gmail.com" || isHostMasterDevice(),
+        isMasterDevice: isHostMasterDevice(),
       }),
     });
   } catch (e) {}
@@ -298,7 +300,8 @@ export async function updateUserProfileInFirestore(
     phone: updatedRecord.phone || "",
     dob: updatedRecord.dob || "",
     bio: updatedRecord.bio || "",
-    tradingPair: updatedRecord.tradingPair || "BTC/USDT",
+    tradingPair: updatedRecord.tradingMarket || updatedRecord.tradingPair || "Crypto Market",
+    tradingMarket: updatedRecord.tradingMarket || updatedRecord.tradingPair || "Crypto Market",
     startingCapital: updatedRecord.startingCapital || "",
     role: updatedRecord.role || "client",
     status: updatedRecord.status || "approved",
@@ -819,6 +822,218 @@ export async function deleteUserInFirestore(email: string) {
     const updated = localUsers.filter((u) => u.email.toLowerCase() !== cleanEmail);
     localStorage.setItem("sngx_local_users", JSON.stringify(updated));
   } catch (e) {}
+}
+
+/**
+ * Update Platform Role in Server and Firestore
+ */
+export async function updatePlatformRoleInStore(params: {
+  userId?: string;
+  email: string;
+  platformRole:
+    | "owner"
+    | "sub_owner"
+    | "verified_signal_provider"
+    | "moderator"
+    | "signal_provider"
+    | "member"
+    | "pending_user";
+  subOwnerDurationDays?: number;
+  subOwnerExpiresAt?: string;
+  subOwnerNote?: string;
+}) {
+  const cleanEmail = cleanEmailKey(params.email);
+  if (!cleanEmail) throw new Error("Email is required");
+
+  // Call Server API
+  try {
+    const res = await fetch("/api/admin/update-platform-role", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: params.userId,
+        email: cleanEmail,
+        platformRole: params.platformRole,
+        subOwnerDurationDays: params.subOwnerDurationDays,
+        subOwnerExpiresAt: params.subOwnerExpiresAt,
+        subOwnerNote: params.subOwnerNote,
+      }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || "Failed to update role on server");
+    }
+  } catch (err: any) {
+    console.warn("Server update-platform-role error:", err.message);
+  }
+
+  // Update Firestore
+  if (!checkQuotaStatus()) {
+    try {
+      const updateData: any = {
+        platformRole: params.platformRole,
+        status: params.platformRole === "pending_user" ? "pending" : "approved",
+      };
+      if (params.platformRole === "sub_owner") {
+        updateData.subOwnerAssignedAt = new Date().toISOString();
+        updateData.subOwnerDurationDays = params.subOwnerDurationDays || 7;
+        updateData.subOwnerExpiresAt =
+          params.subOwnerExpiresAt ||
+          new Date(Date.now() + (params.subOwnerDurationDays || 7) * 24 * 60 * 60 * 1000).toISOString();
+        updateData.subOwnerNote = params.subOwnerNote || "Sub-Owner";
+      }
+
+      await setDoc(doc(db, "users", cleanEmail), updateData, { merge: true });
+      await addAuditLogToFirestore(`Platform role updated for ${cleanEmail}: ${params.platformRole.toUpperCase()}`, "success");
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `users/${cleanEmail}`);
+    }
+  }
+}
+
+/**
+ * Create a Sub-Owner Request for the Owner
+ */
+export async function createSubOwnerRequestInStore(params: {
+  subOwnerEmail: string;
+  subOwnerUsername: string;
+  subOwnerDisplayName?: string;
+  actionType:
+    | "approve_user"
+    | "reject_user"
+    | "change_role"
+    | "delete_user"
+    | "add_gmail"
+    | "delete_group"
+    | "delete_message"
+    | "reset_password"
+    | "custom_action";
+  targetEmail?: string;
+  targetUsername?: string;
+  targetId?: string;
+  title: string;
+  description: string;
+  payload?: any;
+  subOwnerNote?: string;
+}) {
+  const res = await fetch("/api/admin/subowner-requests/create", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || "Failed to create approval request");
+  }
+  return data;
+}
+
+/**
+ * Approve a Sub-Owner Request (Owner Only)
+ */
+export async function approveSubOwnerRequestInStore(requestId: string, ownerResponseNote?: string) {
+  const res = await fetch("/api/admin/subowner-requests/approve", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ requestId, ownerResponseNote }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || "Failed to approve request");
+  }
+  return data;
+}
+
+/**
+ * Reject a Sub-Owner Request (Owner Only)
+ */
+export async function rejectSubOwnerRequestInStore(requestId: string, ownerResponseNote?: string) {
+  const res = await fetch("/api/admin/subowner-requests/reject", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ requestId, ownerResponseNote }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || "Failed to reject request");
+  }
+  return data;
+}
+
+/**
+ * Fetch Sub-Owner Requests
+ */
+export async function fetchSubOwnerRequestsFromStore() {
+  try {
+    const res = await fetch("/api/admin/subowner-requests");
+    if (res.ok) {
+      const data = await res.json();
+      return data.requests || [];
+    }
+  } catch (e) {
+    console.warn("Could not fetch sub-owner requests:", e);
+  }
+  return [];
+}
+
+/**
+ * Create Moderator or Bug Report
+ */
+export async function createModeratorReportInStore(params: {
+  reportedByEmail: string;
+  reportedByUsername: string;
+  reportedByDisplayName?: string;
+  category?: "bug" | "user_feedback" | "harassment" | "signal_inquiry" | "urgent_issue";
+  subject: string;
+  message: string;
+}) {
+  const res = await fetch("/api/admin/moderator-reports/create", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || "Failed to submit report");
+  }
+  return data;
+}
+
+/**
+ * Fetch Moderator Reports
+ */
+export async function fetchModeratorReportsFromStore() {
+  try {
+    const res = await fetch("/api/admin/moderator-reports");
+    if (res.ok) {
+      const data = await res.json();
+      return data.reports || [];
+    }
+  } catch (e) {
+    console.warn("Could not fetch moderator reports:", e);
+  }
+  return [];
+}
+
+/**
+ * Resolve Moderator Report
+ */
+export async function resolveModeratorReportInStore(reportId: string, status: string, handledBy?: string, adminNotes?: string) {
+  const res = await fetch("/api/admin/moderator-reports/resolve", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reportId, status, handledBy, adminNotes }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || "Failed to resolve report");
+  }
+  return data;
 }
 
 /**

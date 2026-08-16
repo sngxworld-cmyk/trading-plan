@@ -1,6 +1,7 @@
 import React from "react";
 import { UserProfile } from "../types";
 import { ShieldCheck, UserCheck, Clock, HelpCircle, User } from "lucide-react";
+import { getEffectiveRole } from "../utils/roleUtils";
 
 interface NavbarProps {
   user: UserProfile | null;
@@ -27,14 +28,19 @@ export const Navbar: React.FC<NavbarProps> = ({
     return () => clearInterval(interval);
   }, []);
 
-  const isApproved = user?.status === "approved" || user?.role === "admin";
+  const effectiveRole = user ? getEffectiveRole(user) : "pending_user";
+  const isOwner =
+    effectiveRole === "owner" ||
+    user?.email.toLowerCase() === "sngxworld@gmail.com" ||
+    user?.username.toLowerCase() === "sngxadmin009";
+  const isApproved = user?.status === "approved" || isOwner;
   const createdTime = user?.createdAt ? new Date(user.createdAt).getTime() : Date.now();
   const remainingMs = Math.max(0, 5 * 24 * 60 * 60 * 1000 - (now - createdTime));
   const isTrialActive = !isApproved && remainingMs > 0;
 
   const days = Math.floor(remainingMs / (1000 * 60 * 60 * 24));
   const hours = Math.floor((remainingMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-  const minutes = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
+  const minutes = Math.floor((remainingMs % (1000 * 60)) / (1000 * 60));
   const seconds = Math.floor((remainingMs % (1000 * 60)) / 1000);
 
   return (
@@ -85,15 +91,15 @@ export const Navbar: React.FC<NavbarProps> = ({
         )}
       </div>
 
-      <div className="flex items-center gap-1 sm:gap-4 shrink-0">
+      <div className="flex items-center gap-1 sm:gap-3 shrink-0">
         {/* Status & Trial Countdown Indicator */}
         {user && (
           <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-950/80 border border-slate-800 text-xs shadow-inner">
-            {user.role === "admin" ? (
+            {isOwner ? (
               <>
-                <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>
-                <span className="text-indigo-400 font-medium uppercase tracking-wider text-[10px] flex items-center gap-1 font-mono">
-                  <ShieldCheck className="w-3 h-3" /> Host Master Admin
+                <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>
+                <span className="text-amber-400 font-medium uppercase tracking-wider text-[10px] flex items-center gap-1 font-mono">
+                  <ShieldCheck className="w-3 h-3 text-amber-400" /> Host Master Admin
                 </span>
               </>
             ) : user.status === "approved" ? (
@@ -143,7 +149,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </p>
             </div>
 
-            {/* Profile Button (Replaces old Logout button per directive) */}
+            {/* Profile Button */}
             <button
               onClick={onOpenProfile}
               title="Profile Editor & Settings"
@@ -156,7 +162,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                   className="w-7 h-7 sm:w-8 sm:h-8 rounded-full object-cover border border-indigo-500/80 shadow-md group-hover:scale-105 transition-transform"
                 />
               ) : (
-                /* WhatsApp-Style Default Profile Logo when no photo is uploaded */
                 <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-900 border border-slate-700/80 flex items-center justify-center text-slate-300 shadow-inner overflow-hidden shrink-0">
                   <div className="w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-slate-600/70 mb-[-6px] flex items-center justify-center">
                     <User className="w-3.5 h-3.5 text-slate-200" />

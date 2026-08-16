@@ -4,9 +4,11 @@ import { RoleBadge, getEffectiveRole, isPendingUser } from "../utils/roleUtils";
 import {
   getChatMessages,
   sendChatMessage,
+  deleteChatMessage,
   getSignalGroups,
   getDirectMessages,
   sendDirectMessage,
+  deleteDirectMessage,
   createSignalGroup,
   deleteSignalGroup,
 } from "../lib/communityStore";
@@ -39,11 +41,14 @@ import {
   Maximize2,
   X,
   Check,
+  ArrowDown,
+  Database,
 } from "lucide-react";
 import { CommunityGuidelinesModal } from "./CommunityGuidelinesModal";
 import { UserProfileModal } from "./UserProfileModal";
 import { CreateGroupModal } from "./CreateGroupModal";
 import { SignalGroupDetailView } from "./SignalGroupDetailView";
+import { ChatDateDivider, isDifferentChatDay, formatMessageTime } from "../utils/chatDateUtils";
 
 interface CommunityChatHubProps {
   currentUser: UserProfile;
@@ -58,25 +63,34 @@ export const CommunityChatHub: React.FC<CommunityChatHubProps> = ({
   const [activeTab, setActiveTab] = useState<"chat" | "groups" | "dms">("chat");
   const [groupsSubTab, setGroupsSubTab] = useState<"free" | "verified">("free");
 
-  // Chat Room State
+  // Public Chat Room State & Scroll Control
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(getChatMessages);
   const [messageInput, setMessageInput] = useState("");
   const [photoAttachmentUrl, setPhotoAttachmentUrl] = useState("");
   const [showPhotoInput, setShowPhotoInput] = useState(false);
   const [voiceMemoActive, setVoiceMemoActive] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Chat scroll refs
+  const publicChatContainerRef = useRef<HTMLDivElement>(null);
+  const isPublicNearBottomRef = useRef(true);
+  const [showPublicScrollBtn, setShowPublicScrollBtn] = useState(false);
+  const prevPublicLatestIdRef = useRef<string | null>(null);
+
+  // Direct Messages State & Scroll Control
+  const [dms, setDms] = useState<DirectMessage[]>(getDirectMessages);
+  const [activeDmUser, setActiveDmUser] = useState<{ email: string; username: string; displayName?: string } | null>(null);
+  const [dmInput, setDmInput] = useState("");
+  const dmContainerRef = useRef<HTMLDivElement>(null);
+  const isDmNearBottomRef = useRef(true);
+  const [showDmScrollBtn, setShowDmScrollBtn] = useState(false);
+  const prevDmLatestIdRef = useRef<string | null>(null);
 
   // Signal Groups State
   const [signalGroups, setSignalGroups] = useState<SignalGroup[]>(getSignalGroups);
   const [selectedGroup, setSelectedGroup] = useState<SignalGroup | null>(null);
   const [groupSearch, setGroupSearch] = useState("");
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
-
-  // Direct Messages State
-  const [dms, setDms] = useState<DirectMessage[]>(getDirectMessages);
-  const [activeDmUser, setActiveDmUser] = useState<{ email: string; username: string; displayName?: string } | null>(null);
-  const [dmInput, setDmInput] = useState("");
 
   // Modals & Popups
   const [isGuidelinesOpen, setIsGuidelinesOpen] = useState(false);
@@ -92,6 +106,43 @@ export const CommunityChatHub: React.FC<CommunityChatHubProps> = ({
   const isHostAdmin =
     currentUser.email.toLowerCase() === "sngxworld@gmail.com" || currentUser.role === "admin";
 
+  // Scroll helpers
+  const scrollPublicToBottom = (behavior: ScrollBehavior = "smooth") => {
+    const el = publicChatContainerRef.current;
+    if (el) {
+      el.scrollTo({ top: el.scrollHeight, behavior });
+      isPublicNearBottomRef.current = true;
+      setShowPublicScrollBtn(false);
+    }
+  };
+
+  const handlePublicScroll = () => {
+    const el = publicChatContainerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - (el.scrollTop + el.clientHeight);
+    const isNear = distanceFromBottom < 100;
+    isPublicNearBottomRef.current = isNear;
+    setShowPublicScrollBtn(!isNear);
+  };
+
+  const scrollDmToBottom = (behavior: ScrollBehavior = "smooth") => {
+    const el = dmContainerRef.current;
+    if (el) {
+      el.scrollTo({ top: el.scrollHeight, behavior });
+      isDmNearBottomRef.current = true;
+      setShowDmScrollBtn(false);
+    }
+  };
+
+  const handleDmScroll = () => {
+    const el = dmContainerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - (el.scrollTop + el.clientHeight);
+    const isNear = distanceFromBottom < 100;
+    isDmNearBottomRef.current = isNear;
+    setShowDmScrollBtn(!isNear);
+  };
+
   // Polling / Auto-refresh for lively chat & DM feel
   useEffect(() => {
     const interval = setInterval(() => {
@@ -102,12 +153,42 @@ export const CommunityChatHub: React.FC<CommunityChatHubProps> = ({
     return () => clearInterval(interval);
   }, []);
 
-  // Scroll to bottom of chat
+  // Smart Public Chat Scroll: Only scroll on tab open or when a new message arrives AND user is near bottom (or sent it)
+  useEffect(() => {
+    if (activeTab !== "chat") return;
+    const latestMsg = chatMessages[chatMessages.length - 1];
+    const latestId = latestMsg?.id || null;
+
+    // First time entering chat tab
+    if (!prevPublicLatestIdRef.current) {
+      prevPublicLatestIdRef.current = latestId;
+      setTimeout(() => scrollPublicToBottom("auto"), 50);
+      return;
+    }
+
+    // Check if a brand new message was actually appended
+    if (latestId && latestId !== prevPublicLatestIdRef.current) {
+      prevPublicLatestIdRef.current = latestId;
+      const isSentByMe = latestMsg.senderEmail.toLowerCase() === currentUser.email.toLowerCase();
+      if (isSentByMe || isPublicNearBottomRef.current) {
+        scrollPublicToBottom("smooth");
+      }
+    }
+  }, [chatMessages, activeTab, currentUser.email]);
+
+  // When switching to activeTab === "chat", initialize position
   useEffect(() => {
     if (activeTab === "chat") {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      setTimeout(() => scrollPublicToBottom("auto"), 50);
     }
-  }, [chatMessages, activeTab]);
+  }, [activeTab]);
+
+  // When opening or switching DM user, scroll to bottom once
+  useEffect(() => {
+    if (activeTab === "dms" && activeDmUser) {
+      setTimeout(() => scrollDmToBottom("auto"), 50);
+    }
+  }, [activeTab, activeDmUser?.email]);
 
   // Send Public Chat Message
   const handleSendMessage = (e: React.FormEvent) => {
@@ -124,6 +205,7 @@ export const CommunityChatHub: React.FC<CommunityChatHubProps> = ({
     setPhotoAttachmentUrl("");
     setShowPhotoInput(false);
     setChatMessages(getChatMessages());
+    setTimeout(() => scrollPublicToBottom("smooth"), 40);
   };
 
   // Upload Photo from Local Storage
@@ -160,6 +242,24 @@ export const CommunityChatHub: React.FC<CommunityChatHubProps> = ({
     }
   };
 
+  const handleDeletePublicMessage = (msgId: string) => {
+    if (!window.confirm("Are you sure you want to delete this message?")) return;
+    const res = deleteChatMessage(currentUser, msgId);
+    if (res.success) {
+      setChatMessages(getChatMessages());
+    } else {
+      setChatError(res.error || "Cannot delete message.");
+    }
+  };
+
+  const handleDeleteDmMessage = (dmId: string) => {
+    if (!window.confirm("Are you sure you want to delete this message?")) return;
+    const res = deleteDirectMessage(currentUser, dmId);
+    if (res.success) {
+      setDms(getDirectMessages());
+    }
+  };
+
   // Send Direct Message
   const handleSendDM = (e: React.FormEvent) => {
     e.preventDefault();
@@ -169,6 +269,7 @@ export const CommunityChatHub: React.FC<CommunityChatHubProps> = ({
     if (res.success) {
       setDmInput("");
       setDms(getDirectMessages());
+      setTimeout(() => scrollDmToBottom("smooth"), 40);
     }
   };
 
@@ -178,22 +279,26 @@ export const CommunityChatHub: React.FC<CommunityChatHubProps> = ({
   };
 
   const handleSendJoinRequestFromGroup = (group: SignalGroup) => {
-    const res = sendDirectMessage(
+    // Send subscription join request DM
+    sendDirectMessage(
       currentUser,
       { email: group.adminEmail, username: group.adminUsername, displayName: group.adminDisplayName },
-      `Hi ${group.adminDisplayName || group.adminUsername}, I would like to join your ${group.name}! Please send me payment details or access authorization.`,
+      `Hi ${group.adminDisplayName || group.adminUsername}, I would like to subscribe to your ${group.name} VIP Signals (${group.priceUsd > 0 ? `$${group.priceUsd}/mo` : "Free"})! Please send me payment details or access authorization.`,
       true,
       group.name,
       group.id
     );
-    if (res.success) {
-      setActiveDmUser({
-        email: group.adminEmail,
-        username: group.adminUsername,
-        displayName: group.adminDisplayName,
-      });
-      setActiveTab("dms");
-    }
+
+    // Refresh DMs and switch immediately to this conversation
+    const updatedDms = getDirectMessages();
+    setDms(updatedDms);
+    setActiveDmUser({
+      email: group.adminEmail,
+      username: group.adminUsername,
+      displayName: group.adminDisplayName || group.adminUsername,
+    });
+    setActiveTab("dms");
+    setTimeout(() => scrollDmToBottom("smooth"), 50);
   };
 
   // Filter groups
@@ -338,52 +443,31 @@ export const CommunityChatHub: React.FC<CommunityChatHubProps> = ({
                 <span className="text-slate-500">•</span>
                 <span className="text-slate-400">All registered traders & verified providers</span>
               </div>
-              <div className="text-[10px] text-slate-500 flex items-center gap-1">
-                <Clock className="w-3 h-3" /> Auto-clean messages older than 4 months
+              <div className="text-[10px] text-emerald-400 font-mono flex items-center gap-1.5 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
+                <Database className="w-3 h-3 text-emerald-400 shrink-0" />
+                <span>Permanent Lifetime Server Vault</span>
               </div>
             </div>
 
             {/* Messages Feed */}
-            <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-4 font-sans">
-              {chatMessages.map((msg) => {
-                const isSelf = msg.senderEmail.toLowerCase() === currentUser.email.toLowerCase();
+            <div className="flex-1 relative overflow-hidden flex flex-col">
+              <div
+                ref={publicChatContainerRef}
+                onScroll={handlePublicScroll}
+                className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-4 font-sans"
+              >
+                {chatMessages.map((msg, index) => {
+                  const isSelf = msg.senderEmail.toLowerCase() === currentUser.email.toLowerCase();
+                  const prevMsg = index > 0 ? chatMessages[index - 1] : null;
+                  const showDateDivider = isDifferentChatDay(prevMsg?.createdAt, msg.createdAt);
 
-                return (
-                  <div
-                    key={msg.id}
-                    className={`flex items-start gap-3 ${isSelf ? "flex-row-reverse" : "flex-row"}`}
-                  >
-                    {/* Avatar */}
-                    <button
-                      onClick={() =>
-                        setSelectedProfileUser({
-                          email: msg.senderEmail,
-                          username: msg.senderUsername,
-                          displayName: msg.senderDisplayName,
-                          photoURL: msg.senderPhotoURL,
-                          platformRole: msg.senderRole,
-                        })
-                      }
-                      className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 overflow-hidden flex items-center justify-center shrink-0 hover:border-indigo-500 transition-colors"
-                    >
-                      {msg.senderPhotoURL ? (
-                        <img
-                          src={msg.senderPhotoURL}
-                          alt={msg.senderUsername}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <span className="text-xs font-mono font-bold text-slate-300 uppercase">
-                          {msg.senderUsername.substring(0, 2)}
-                        </span>
-                      )}
-                    </button>
-
-                    {/* Message Bubble & Role Badge In Front of Name (Slide 2 & 14) */}
-                    <div className={`max-w-xl space-y-1.5 ${isSelf ? "items-end text-right" : "items-start text-left"}`}>
-                      <div className="flex flex-wrap items-center gap-1.5 text-xs font-mono">
-                        {/* ROLE BADGE IN FRONT OF NAME AS REQUESTED */}
-                        <RoleBadge role={msg.senderRole} size="xs" />
+                  return (
+                    <React.Fragment key={msg.id}>
+                      {showDateDivider && <ChatDateDivider date={msg.createdAt} />}
+                      <div
+                        className={`flex items-start gap-3 ${isSelf ? "flex-row-reverse" : "flex-row"}`}
+                      >
+                        {/* Avatar */}
                         <button
                           onClick={() =>
                             setSelectedProfileUser({
@@ -394,55 +478,109 @@ export const CommunityChatHub: React.FC<CommunityChatHubProps> = ({
                               platformRole: msg.senderRole,
                             })
                           }
-                          className="font-bold text-slate-200 hover:text-indigo-400"
+                          className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 overflow-hidden flex items-center justify-center shrink-0 hover:border-indigo-500 transition-colors"
                         >
-                          {msg.senderDisplayName || msg.senderUsername}
-                        </button>
-                        <span className="text-[10px] text-slate-500">
-                          {new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                      </div>
-
-                      <div
-                        className={`p-3.5 rounded-2xl text-xs sm:text-sm leading-relaxed ${
-                          isSelf
-                            ? "bg-indigo-600 text-white rounded-tr-none shadow-md shadow-indigo-600/20"
-                            : "bg-slate-950 border border-slate-800 text-slate-200 rounded-tl-none"
-                        }`}
-                      >
-                        <p className="break-words">{msg.content}</p>
-
-                        {/* Image Attachment with Download & Zoom */}
-                        {msg.photoUrl && (
-                          <div className="mt-2.5 rounded-xl overflow-hidden border border-slate-800 max-w-sm relative group bg-slate-950">
+                          {msg.senderPhotoURL ? (
                             <img
-                              src={msg.photoUrl}
-                              alt="Attached Chart"
-                              className="w-full h-auto object-cover max-h-60 cursor-pointer hover:opacity-95 transition-opacity"
-                              onClick={() => setZoomedImage(msg.photoUrl || null)}
+                              src={msg.senderPhotoURL}
+                              alt={msg.senderUsername}
+                              className="w-full h-full object-cover"
                             />
-                            <div className="absolute bottom-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          ) : (
+                            <span className="text-xs font-mono font-bold text-slate-300 uppercase">
+                              {msg.senderUsername.substring(0, 2)}
+                            </span>
+                          )}
+                        </button>
+
+                        {/* Message Bubble & Role Badge In Front of Name */}
+                        <div className={`max-w-xl space-y-1.5 ${isSelf ? "items-end text-right" : "items-start text-left"}`}>
+                          <div className="flex flex-wrap items-center gap-1.5 text-xs font-mono">
+                            {/* ROLE BADGE IN FRONT OF NAME */}
+                            <RoleBadge role={msg.senderRole} size="xs" />
+                            <button
+                              onClick={() =>
+                                setSelectedProfileUser({
+                                  email: msg.senderEmail,
+                                  username: msg.senderUsername,
+                                  displayName: msg.senderDisplayName,
+                                  photoURL: msg.senderPhotoURL,
+                                  platformRole: msg.senderRole,
+                                })
+                              }
+                              className="font-bold text-slate-200 hover:text-indigo-400"
+                            >
+                              {msg.senderDisplayName || msg.senderUsername}
+                            </button>
+                            <span className="text-[10px] text-slate-500">
+                              {formatMessageTime(msg.createdAt)}
+                            </span>
+
+                            {(isSelf || isHostAdmin || userRole === "owner" || userRole === "sub_owner" || userRole === "moderator") && (
                               <button
                                 type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  downloadImageToLocal(msg.photoUrl!, `public_chat_${msg.id}.png`);
-                                }}
-                                className="px-2.5 py-1 rounded-lg bg-slate-950/90 hover:bg-indigo-600 text-slate-200 text-[10px] font-mono flex items-center gap-1 shadow-lg transition-all border border-slate-800 hover:border-indigo-500"
-                                title="Download Photo to Device"
+                                onClick={() => handleDeletePublicMessage(msg.id)}
+                                className="text-slate-500 hover:text-rose-400 p-0.5 rounded transition-colors"
+                                title="Delete Message"
                               >
-                                <Download className="w-3 h-3 text-indigo-300" />
-                                <span>Download</span>
+                                <Trash2 className="w-3 h-3" />
                               </button>
-                            </div>
+                            )}
                           </div>
-                        )}
+
+                          <div
+                            className={`p-3.5 rounded-2xl text-xs sm:text-sm leading-relaxed ${
+                              isSelf
+                                ? "bg-indigo-600 text-white rounded-tr-none shadow-md shadow-indigo-600/20"
+                                : "bg-slate-950 border border-slate-800 text-slate-200 rounded-tl-none"
+                            }`}
+                          >
+                            <p className="break-words">{msg.content}</p>
+
+                            {/* Image Attachment with Download & Zoom */}
+                            {msg.photoUrl && (
+                              <div className="mt-2.5 rounded-xl overflow-hidden border border-slate-800 max-w-sm relative group bg-slate-950">
+                                <img
+                                  src={msg.photoUrl}
+                                  alt="Attached Chart"
+                                  className="w-full h-auto object-cover max-h-60 cursor-pointer hover:opacity-95 transition-opacity"
+                                  onClick={() => setZoomedImage(msg.photoUrl || null)}
+                                />
+                                <div className="absolute bottom-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      downloadImageToLocal(msg.photoUrl!, `public_chat_${msg.id}.png`);
+                                    }}
+                                    className="px-2.5 py-1 rounded-lg bg-slate-950/90 hover:bg-indigo-600 text-slate-200 text-[10px] font-mono flex items-center gap-1 shadow-lg transition-all border border-slate-800 hover:border-indigo-500"
+                                    title="Download Photo to Device"
+                                  >
+                                    <Download className="w-3 h-3 text-indigo-300" />
+                                    <span>Download</span>
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                );
-              })}
-              <div ref={messagesEndRef} />
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+
+              {/* Floating Jump to Latest Button for Public Chat */}
+              {showPublicScrollBtn && (
+                <button
+                  type="button"
+                  onClick={() => scrollPublicToBottom("smooth")}
+                  className="absolute bottom-4 right-6 z-20 px-3.5 py-1.5 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs font-bold flex items-center gap-1.5 shadow-xl shadow-indigo-600/40 border border-indigo-400/40 transition-all hover:scale-105 active:scale-95"
+                >
+                  <ArrowDown className="w-3.5 h-3.5 animate-bounce" />
+                  <span>Jump to latest</span>
+                </button>
+              )}
             </div>
 
             {/* Chat Input Bar */}
@@ -936,84 +1074,96 @@ export const CommunityChatHub: React.FC<CommunityChatHubProps> = ({
                   </div>
 
                   {/* DM Messages Feed */}
-                  <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-4 font-sans">
-                    {activeConversation.length === 0 ? (
-                      <div className="text-center py-12 text-xs text-slate-500 font-mono">
-                        Say hello to start the conversation!
-                      </div>
-                    ) : (
-                      activeConversation.map((dm) => {
-                        const isSelf = dm.senderEmail.toLowerCase() === currentUser.email.toLowerCase();
+                  <div className="flex-1 relative overflow-hidden flex flex-col">
+                    <div
+                      ref={dmContainerRef}
+                      onScroll={handleDmScroll}
+                      className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-4 font-sans"
+                    >
+                      {activeConversation.length === 0 ? (
+                        <div className="text-center py-12 text-xs text-slate-500 font-mono">
+                          Say hello to start the conversation!
+                        </div>
+                      ) : (
+                        activeConversation.map((dm, index) => {
+                          const isSelf = dm.senderEmail.toLowerCase() === currentUser.email.toLowerCase();
+                          const prevDm = index > 0 ? activeConversation[index - 1] : null;
+                          const showDateDivider = isDifferentChatDay(prevDm?.createdAt, dm.createdAt);
 
-                        return (
-                          <div
-                            key={dm.id}
-                            className={`flex flex-col ${isSelf ? "items-end" : "items-start"}`}
-                          >
-                            <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-500 mb-1">
-                              <span>{dm.senderDisplayName || dm.senderUsername}</span>
-                              <span>•</span>
-                              <span>
-                                {new Date(dm.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                              </span>
-                            </div>
-
-                            <div
-                              className={`p-3.5 rounded-2xl max-w-md text-xs sm:text-sm leading-relaxed ${
-                                isSelf
-                                  ? "bg-indigo-600 text-white rounded-tr-none shadow-md shadow-indigo-600/20"
-                                  : "bg-slate-950 border border-slate-800 text-slate-200 rounded-tl-none"
-                              }`}
-                            >
-                              {dm.isJoinRequest && (
-                                <div className="mb-2 p-2 rounded-lg bg-indigo-950/80 border border-indigo-500/40 text-[10px] font-mono text-indigo-300 flex items-center gap-1.5">
-                                  <Sparkles className="w-3 h-3 text-amber-400" />
-                                  <span>SIGNAL GROUP JOIN REQUEST: {dm.targetGroupName}</span>
+                          return (
+                            <React.Fragment key={dm.id}>
+                              {showDateDivider && <ChatDateDivider date={dm.createdAt} />}
+                              <div
+                                className={`flex flex-col ${isSelf ? "items-end" : "items-start"}`}
+                              >
+                                <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-500 mb-1">
+                                  <span>{dm.senderDisplayName || dm.senderUsername}</span>
+                                  <span>•</span>
+                                  <span>
+                                    {formatMessageTime(dm.createdAt)}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteDmMessage(dm.id)}
+                                    className="text-slate-500 hover:text-rose-400 p-0.5 rounded transition-colors ml-1"
+                                    title="Delete Message"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
                                 </div>
-                              )}
-                              <p className="break-words">{dm.content}</p>
-                            </div>
-                          </div>
-                        );
-                      })
+
+                                <div
+                                  className={`p-3.5 rounded-2xl max-w-md text-xs sm:text-sm leading-relaxed ${
+                                    isSelf
+                                      ? "bg-indigo-600 text-white rounded-tr-none shadow-md shadow-indigo-600/20"
+                                      : "bg-slate-950 border border-slate-800 text-slate-200 rounded-tl-none"
+                                  }`}
+                                >
+                                  {dm.isJoinRequest && (
+                                    <div className="mb-2 p-2 rounded-lg bg-indigo-950/80 border border-indigo-500/40 text-[10px] font-mono text-indigo-300 flex items-center gap-1.5">
+                                      <Sparkles className="w-3 h-3 text-amber-400" />
+                                      <span>SIGNAL GROUP JOIN REQUEST: {dm.targetGroupName}</span>
+                                    </div>
+                                  )}
+                                  <p className="break-words">{dm.content}</p>
+                                </div>
+                              </div>
+                            </React.Fragment>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* Floating Jump to Latest Button for DMs */}
+                    {showDmScrollBtn && (
+                      <button
+                        type="button"
+                        onClick={() => scrollDmToBottom("smooth")}
+                        className="absolute bottom-4 right-6 z-20 px-3.5 py-1.5 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs font-bold flex items-center gap-1.5 shadow-xl shadow-indigo-600/40 border border-indigo-400/40 transition-all hover:scale-105 active:scale-95"
+                      >
+                        <ArrowDown className="w-3.5 h-3.5 animate-bounce" />
+                        <span>Jump to latest</span>
+                      </button>
                     )}
                   </div>
 
                   {/* DM Input Bar */}
-                  {isTrialOrPending ? (
-                    <div className="p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between gap-3 text-xs font-mono">
-                      <div className="flex items-center gap-2 text-slate-400">
-                        <Lock className="w-4 h-4 text-amber-400 shrink-0" />
-                        <span>
-                          <strong className="text-amber-400">Direct Messages Restricted:</strong> Pending & Trial users cannot send direct messages until approved by Host Admin.
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setIsGuidelinesOpen(true)}
-                        className="text-indigo-400 underline text-xs whitespace-nowrap"
-                      >
-                        Guidelines
-                      </button>
-                    </div>
-                  ) : (
-                    <form onSubmit={handleSendDM} className="p-4 bg-slate-950 border-t border-slate-800 flex gap-2">
-                      <input
-                        type="text"
-                        value={dmInput}
-                        onChange={(e) => setDmInput(e.target.value)}
-                        placeholder={`Message ${activeDmUser.displayName || activeDmUser.username}...`}
-                        className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs sm:text-sm text-slate-100 placeholder-slate-600 focus:border-indigo-500 focus:outline-none font-sans"
-                      />
-                      <button
-                        type="submit"
-                        disabled={!dmInput.trim()}
-                        className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs font-mono uppercase tracking-wider flex items-center gap-1.5 shadow-lg shadow-indigo-600/30"
-                      >
-                        <Send className="w-3.5 h-3.5" /> Send
-                      </button>
-                    </form>
-                  )}
+                  <form onSubmit={handleSendDM} className="p-4 bg-slate-950 border-t border-slate-800 flex gap-2">
+                    <input
+                      type="text"
+                      value={dmInput}
+                      onChange={(e) => setDmInput(e.target.value)}
+                      placeholder={`Message ${activeDmUser.displayName || activeDmUser.username}...`}
+                      className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs sm:text-sm text-slate-100 placeholder-slate-600 focus:border-indigo-500 focus:outline-none font-sans"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!dmInput.trim()}
+                      className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs font-mono uppercase tracking-wider flex items-center gap-1.5 shadow-lg shadow-indigo-600/30"
+                    >
+                      <Send className="w-3.5 h-3.5" /> Send
+                    </button>
+                  </form>
                 </>
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-500 font-mono space-y-2">

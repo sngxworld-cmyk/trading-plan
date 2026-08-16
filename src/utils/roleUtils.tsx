@@ -11,10 +11,56 @@ export function isPendingUser(user?: Partial<UserProfile> | null): boolean {
   return user.status !== "approved" || user.platformRole === "pending_user";
 }
 
+export function isSubOwnerExpired(user?: Partial<UserProfile> | null): boolean {
+  if (!user || user.platformRole !== "sub_owner") return false;
+  if (!user.subOwnerExpiresAt) return false;
+  const expiry = new Date(user.subOwnerExpiresAt).getTime();
+  return !isNaN(expiry) && Date.now() > expiry;
+}
+
+export function getSubOwnerTimeRemaining(user?: Partial<UserProfile> | null): {
+  isExpired: boolean;
+  text: string;
+  days: number;
+  hours: number;
+  minutes: number;
+} {
+  if (!user || user.platformRole !== "sub_owner" || !user.subOwnerExpiresAt) {
+    return { isExpired: false, text: "Permanent / Unlimited", days: 999, hours: 0, minutes: 0 };
+  }
+  const expiry = new Date(user.subOwnerExpiresAt).getTime();
+  if (isNaN(expiry)) {
+    return { isExpired: false, text: "Unlimited", days: 999, hours: 0, minutes: 0 };
+  }
+  const diffMs = expiry - Date.now();
+  if (diffMs <= 0) {
+    return { isExpired: true, text: "Expired", days: 0, hours: 0, minutes: 0 };
+  }
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+  return {
+    isExpired: false,
+    text: days > 0 ? `${days}d ${hours}h left` : `${hours}h ${minutes}m left`,
+    days,
+    hours,
+    minutes,
+  };
+}
+
 export function getEffectiveRole(user?: Partial<UserProfile> | null): PlatformRole {
   if (!user) return "pending_user";
+  if (user.email?.toLowerCase() === "sngxworld@gmail.com" || user.username?.toLowerCase() === "sngxadmin009") {
+    return "owner";
+  }
+  if (user.platformRole === "sub_owner") {
+    if (isSubOwnerExpired(user)) {
+      return "member"; // Downgrades gracefully if sub-owner time limit elapsed
+    }
+    return "sub_owner";
+  }
   if (user.platformRole) return user.platformRole;
-  if (user.email?.toLowerCase() === "sngxworld@gmail.com" || user.role === "admin") {
+  if (user.role === "admin") {
     return "owner";
   }
   if (user.status === "approved") {

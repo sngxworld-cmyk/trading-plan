@@ -16,6 +16,7 @@ interface UserProfileModalProps {
     createdAt?: string;
     bio?: string;
     tradingPair?: string;
+    tradingMarket?: string;
     hideIdentity?: boolean;
   };
   currentUser: UserProfile;
@@ -139,38 +140,39 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
             <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center gap-2">
               <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
               <div>
-                <span className="text-[10px] text-slate-500 block uppercase">Preferred Pair</span>
-                <strong className="text-slate-200">{targetUser.tradingPair || "BTC/USDT"}</strong>
+                <span className="text-[10px] text-slate-500 block uppercase">Trading Market</span>
+                <strong className="text-slate-200">{targetUser.tradingMarket || targetUser.tradingPair || "Crypto Market"}</strong>
               </div>
             </div>
+          </div>
+
+          {/* Guideline Banner for Harassment / Conduct */}
+          <div className="mt-3 p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/25 flex items-center gap-2 text-[11px] text-rose-300 font-sans">
+            <Shield className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>
+              <strong className="font-semibold text-rose-200">Community Safety Rule:</strong> Harassment of any user leads to an <strong>immediate permanent ban</strong>.
+            </span>
           </div>
 
           {/* Actions */}
           <div className="mt-6 space-y-2">
             {!isSelf && (
               <>
-                {isPendingUser(currentUser) ? (
-                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-amber-300 flex items-center gap-2">
-                    <Lock className="w-4 h-4 text-amber-400 shrink-0" />
-                    <span>Direct messaging locked for pending/trial accounts.</span>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => {
-                      onClose();
-                      onStartDM({
-                        email: targetUser.email,
-                        username: targetUser.username,
-                        displayName: targetUser.displayName,
-                      });
-                    }}
-                    className="w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 transition-all font-mono"
-                  >
-                    <MessageSquare className="w-4 h-4" /> Direct Message
-                  </button>
-                )}
+                <button
+                  onClick={() => {
+                    onClose();
+                    onStartDM({
+                      email: targetUser.email,
+                      username: targetUser.username,
+                      displayName: targetUser.displayName,
+                    });
+                  }}
+                  className="w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 transition-all font-mono"
+                >
+                  <MessageSquare className="w-4 h-4" /> Direct Message
+                </button>
 
-                {ownedGroup && !isPendingUser(currentUser) && (
+                {ownedGroup && (
                   <button
                     onClick={() => {
                       if (onSendJoinRequest) onSendJoinRequest(ownedGroup);

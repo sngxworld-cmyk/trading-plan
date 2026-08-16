@@ -60,13 +60,8 @@ export function getChatMessages(): ChatMessage[] {
       return DEFAULT_CHAT_MESSAGES;
     }
     const msgs: ChatMessage[] = JSON.parse(raw);
-    // Auto-delete messages older than 4 months (120 days) as requested in Slide 10
-    const fourMonthsAgo = Date.now() - 120 * 24 * 60 * 60 * 1000;
-    const filtered = msgs.filter((m) => new Date(m.createdAt).getTime() > fourMonthsAgo);
-    if (filtered.length !== msgs.length) {
-      localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(filtered));
-    }
-    return filtered;
+    // Lifetime permanent archive: No auto-deletion or expiration of messages, photos, or media
+    return msgs;
   } catch {
     return DEFAULT_CHAT_MESSAGES;
   }
@@ -120,6 +115,42 @@ export function sendChatMessage(
   return { success: true, message: newMsg };
 }
 
+export function deleteChatMessage(
+  deleter: UserProfile,
+  messageId: string
+): { success: boolean; error?: string } {
+  const msgs = getChatMessages();
+  const target = msgs.find((m) => m.id === messageId);
+  if (!target) return { success: false, error: "Message not found." };
+
+  const deleterEmail = (deleter.email || "").toLowerCase();
+  const isHost =
+    deleterEmail === "sngxworld@gmail.com" ||
+    deleter.role === "admin" ||
+    deleter.platformRole === "owner" ||
+    deleter.platformRole === "sub_owner" ||
+    deleter.platformRole === "moderator";
+  const isAuthor =
+    (target.senderEmail || "").toLowerCase() === deleterEmail ||
+    (target.senderUsername || "").toLowerCase() === (deleter.username || "").toLowerCase();
+
+  if (!isHost && !isAuthor) {
+    return { success: false, error: "You can only delete your own messages." };
+  }
+
+  const filtered = msgs.filter((m) => m.id !== messageId);
+  localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(filtered));
+
+  // Sync delete with server API
+  fetch(`/api/community/chat/messages/${messageId}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ deleterEmail }),
+  }).catch(() => {});
+
+  return { success: true };
+}
+
 export function getSignalGroups(): SignalGroup[] {
   try {
     const raw = localStorage.getItem(GROUPS_STORAGE_KEY);
@@ -142,6 +173,54 @@ export function saveSignalGroups(groups: SignalGroup[]) {
   }).catch(() => {});
 }
 
+// 20-Year WhatsApp-like Server History Retention Constant (20 years in milliseconds)
+export const SERVER_HISTORY_RETENTION_YEARS = 20;
+export const SERVER_HISTORY_RETENTION_MS = 20 * 365.25 * 24 * 60 * 60 * 1000;
+
+// Helper: Get active signal group owned by this user
+export function getUserOwnedSignalGroup(user?: Partial<UserProfile> | null): SignalGroup | undefined {
+  if (!user) return undefined;
+  const groups = getSignalGroups();
+  const uEmail = (user.email || "").trim().toLowerCase();
+  const uName = (user.username || "").trim().toLowerCase();
+  return groups.find((g) => {
+    const gEmail = (g.adminEmail || "").trim().toLowerCase();
+    const gName = (g.adminUsername || "").trim().toLowerCase();
+    return (uEmail && gEmail === uEmail) || (uName && gName === uName);
+  });
+}
+
+// Helper: Verify if user can create a signal group (Enforces strict 1 Group Limit)
+export function canUserCreateSignalGroup(user?: Partial<UserProfile> | null): {
+  allowed: boolean;
+  reason?: string;
+  existingGroup?: SignalGroup;
+} {
+  if (!user) {
+    return { allowed: false, reason: "You must be logged in to create a signal group." };
+  }
+  if (isPendingUser(user)) {
+    return {
+      allowed: false,
+      reason: "Pending accounts cannot create signal groups until approved by Host Admin.",
+    };
+  }
+
+  const userEmail = (user.email || "").trim().toLowerCase();
+  const isHost = userEmail === "sngxworld@gmail.com";
+  const existing = getUserOwnedSignalGroup(user);
+
+  if (!isHost && existing) {
+    return {
+      allowed: false,
+      reason: `1 Group Limit Reached: You are already the administrator of '${existing.name}'. You can only create up to 1 signal group at a time. Delete your existing group first to create a new one.`,
+      existingGroup: existing,
+    };
+  }
+
+  return { allowed: true };
+}
+
 export function createSignalGroup(
   creator: UserProfile,
   groupData: {
@@ -153,11 +232,22 @@ export function createSignalGroup(
     allowMemberChat?: boolean;
   }
 ): { success: boolean; error?: string; group?: SignalGroup } {
-  // Restriction: PENDING USERS CANNOT CREATE SIGNAL GROUPS
+  // Restriction 1: PENDING USERS CANNOT CREATE SIGNAL GROUPS
   if (isPendingUser(creator)) {
     return {
       success: false,
       error: "Pending users cannot create signal groups until account approval by Host Admin.",
+    };
+  }
+
+  // Restriction 2: STRICT 1 GROUP PER USER LIMIT (Must delete previous group first)
+  const userEmail = (creator.email || "").trim().toLowerCase();
+  const isHost = userEmail === "sngxworld@gmail.com";
+  const existing = getUserOwnedSignalGroup(creator);
+  if (!isHost && existing) {
+    return {
+      success: false,
+      error: `1 Group Limit Reached: You already have an active signal group '${existing.name}'. Each trader can only create 1 signal group at a time. Delete your current group first to create a new one.`,
     };
   }
 
@@ -240,6 +330,201 @@ export function updateGroupSubscriptionPricing(
 
   group.isPaid = settings.isPaid && settings.priceUsd > 0;
   group.priceUsd = group.isPaid ? Math.min(Math.max(0, settings.priceUsd), 17) : 0;
+
+  saveSignalGroups(groups);
+  return { success: true, group };
+}
+
+// Group Admin Add Member directly to group (Point 2 inside group settings)
+export function addMemberToSignalGroup(
+  admin: UserProfile,
+  groupId: string,
+  memberEmailOrUsername: string,
+  grantChatAccess: boolean = false
+): { success: boolean; error?: string; group?: SignalGroup; addedMember?: string } {
+  const groups = getSignalGroups();
+  const group = groups.find((g) => g.id === groupId);
+
+  if (!group) return { success: false, error: "Signal group not found." };
+
+  const adminEmail = admin.email.toLowerCase();
+  const isHost = adminEmail === "sngxworld@gmail.com" || admin.role === "admin";
+  const isGroupAdmin = group.adminEmail.toLowerCase() === adminEmail;
+
+  if (!isHost && !isGroupAdmin) {
+    return { success: false, error: "Only the Group Admin can add members to this group." };
+  }
+
+  const cleanInput = (memberEmailOrUsername || "").trim().toLowerCase();
+  if (!cleanInput) {
+    return { success: false, error: "Please provide a valid member email or username." };
+  }
+
+  // Check if target is already in group.members
+  const existingLower = (group.members || []).map((m) => m.toLowerCase());
+  if (existingLower.includes(cleanInput)) {
+    return { success: false, error: `${cleanInput} is already a member of this group.` };
+  }
+
+  // Add to members list
+  group.members = [...(group.members || []), cleanInput];
+  group.membersCount = group.members.length;
+
+  // If chat permission granted
+  if (grantChatAccess) {
+    const chatAllowed = (group.allowedChatMembers || []).map((m) => m.toLowerCase());
+    if (!chatAllowed.includes(cleanInput)) {
+      group.allowedChatMembers = [...chatAllowed, cleanInput];
+    }
+  }
+
+  saveSignalGroups(groups);
+
+  // Send system announcement in group chat
+  const memberName = cleanInput.split("@")[0].toUpperCase();
+  const systemMsg: GroupChatMessage = {
+    id: "gmsg_sys_" + Math.random().toString(36).substring(2, 9),
+    groupId,
+    senderId: "system",
+    senderEmail: group.adminEmail,
+    senderUsername: "System",
+    senderDisplayName: "Group Security Bot",
+    senderPhotoURL: "",
+    senderRole: "moderator",
+    content: `🎉 Welcome @${memberName}! You have been added to ${group.name} by the Group Admin.`,
+    createdAt: new Date().toISOString(),
+    isAnnouncement: true,
+  };
+
+  const key = getGroupChatStorageKey(groupId);
+  const msgs = getGroupChatMessages(groupId);
+  msgs.push(systemMsg);
+  localStorage.setItem(key, JSON.stringify(msgs));
+
+  return { success: true, group, addedMember: cleanInput };
+}
+
+// Group Admin Remove Member from group
+export function removeMemberFromSignalGroup(
+  admin: UserProfile,
+  groupId: string,
+  memberEmail: string
+): { success: boolean; error?: string; group?: SignalGroup } {
+  const groups = getSignalGroups();
+  const group = groups.find((g) => g.id === groupId);
+
+  if (!group) return { success: false, error: "Signal group not found." };
+
+  const adminEmail = (admin.email || "").toLowerCase();
+  const adminRole = getEffectiveRole(admin);
+  const isHost =
+    adminEmail === "sngxworld@gmail.com" ||
+    admin.role === "admin" ||
+    adminRole === "owner" ||
+    adminRole === "sub_owner";
+  const isGroupAdmin =
+    (group.adminEmail || "").toLowerCase() === adminEmail ||
+    (group.adminUsername || "").toLowerCase() === (admin.username || "").toLowerCase();
+
+  if (!isHost && !isGroupAdmin) {
+    return { success: false, error: "Only the Group Admin or Host can remove members from this group." };
+  }
+
+  const cleanTarget = memberEmail.trim().toLowerCase();
+  if (
+    cleanTarget === (group.adminEmail || "").toLowerCase() ||
+    cleanTarget === (group.adminUsername || "").toLowerCase()
+  ) {
+    return { success: false, error: "Cannot remove the Group Administrator." };
+  }
+
+  // Filter out target by exact match, username prefix, or @ prefix
+  group.members = (group.members || []).filter((m) => {
+    const mLower = m.trim().toLowerCase();
+    return (
+      mLower !== cleanTarget &&
+      mLower !== cleanTarget.split("@")[0] &&
+      mLower.replace(/^@/, "") !== cleanTarget.replace(/^@/, "")
+    );
+  });
+  group.membersCount = group.members.length;
+
+  if (group.allowedChatMembers) {
+    group.allowedChatMembers = group.allowedChatMembers.filter((m) => {
+      const mLower = m.trim().toLowerCase();
+      return (
+        mLower !== cleanTarget &&
+        mLower !== cleanTarget.split("@")[0] &&
+        mLower.replace(/^@/, "") !== cleanTarget.replace(/^@/, "")
+      );
+    });
+  }
+
+  // Save to persistence
+  saveSignalGroups(groups);
+
+  // System notification in group chat
+  const systemMsg: GroupChatMessage = {
+    id: `msg_sys_rem_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    groupId: group.id,
+    senderId: "usr_sys_notify",
+    senderEmail: "system@community.net",
+    senderUsername: "System Notification",
+    senderDisplayName: "Group Moderation",
+    senderRole: "owner",
+    content: `📢 [MEMBER REMOVED] Member '${memberEmail}' was removed from ${group.name} by the administrator.`,
+    isAnnouncement: true,
+    createdAt: new Date().toISOString(),
+  };
+  const key = `${GROUP_CHAT_STORAGE_PREFIX}${groupId}`;
+  const msgs = getGroupChatMessages(groupId);
+  msgs.push(systemMsg);
+  localStorage.setItem(key, JSON.stringify(msgs));
+
+  return { success: true, group };
+}
+
+// Group Admin Update Group Settings (Name, Description, Logo, Chat Mode, Visibility)
+export function updateSignalGroupDetails(
+  admin: UserProfile,
+  groupId: string,
+  updates: {
+    name?: string;
+    description?: string;
+    logoUrl?: string;
+    adminOnlyChat?: boolean;
+    hideMembers?: boolean;
+  }
+): { success: boolean; error?: string; group?: SignalGroup } {
+  const groups = getSignalGroups();
+  const group = groups.find((g) => g.id === groupId);
+
+  if (!group) return { success: false, error: "Signal group not found." };
+
+  const adminEmail = admin.email.toLowerCase();
+  const isHost = adminEmail === "sngxworld@gmail.com" || admin.role === "admin";
+  const isGroupAdmin = group.adminEmail.toLowerCase() === adminEmail;
+
+  if (!isHost && !isGroupAdmin) {
+    return { success: false, error: "Only the Group Admin can edit group settings." };
+  }
+
+  if (updates.name && updates.name.trim()) {
+    group.name = updates.name.trim();
+  }
+  if (updates.description && updates.description.trim()) {
+    group.description = updates.description.trim();
+  }
+  if (updates.logoUrl !== undefined) {
+    group.logoUrl = updates.logoUrl;
+  }
+  if (updates.adminOnlyChat !== undefined) {
+    group.adminOnlyChat = updates.adminOnlyChat;
+    group.allowMemberChat = !updates.adminOnlyChat;
+  }
+  if (updates.hideMembers !== undefined) {
+    group.hideMembers = updates.hideMembers;
+  }
 
   saveSignalGroups(groups);
   return { success: true, group };
@@ -541,14 +826,6 @@ export function sendDirectMessage(
   targetGroupName?: string,
   targetGroupId?: string
 ): { success: boolean; error?: string; message?: DirectMessage } {
-  // Restriction: PENDING USERS CANNOT SEND DIRECT MESSAGES
-  if (isPendingUser(sender)) {
-    return {
-      success: false,
-      error: "Pending users cannot send direct messages until approved by Host Admin.",
-    };
-  }
-
   if (!content.trim()) return { success: false, error: "Message cannot be empty." };
 
   const senderRole = getEffectiveRole(sender);
@@ -574,6 +851,34 @@ export function sendDirectMessage(
   localStorage.setItem(DMS_STORAGE_KEY, JSON.stringify(dms));
 
   return { success: true, message: newDm };
+}
+
+export function deleteDirectMessage(
+  deleter: UserProfile,
+  messageId: string
+): { success: boolean; error?: string } {
+  const dms = getDirectMessages();
+  const target = dms.find((m) => m.id === messageId);
+  if (!target) return { success: false, error: "Direct message not found." };
+
+  const deleterEmail = (deleter.email || "").toLowerCase();
+  const isHost =
+    deleterEmail === "sngxworld@gmail.com" ||
+    deleter.role === "admin" ||
+    deleter.platformRole === "owner" ||
+    deleter.platformRole === "sub_owner";
+  const isParticipant =
+    target.senderEmail.toLowerCase() === deleterEmail ||
+    target.receiverEmail.toLowerCase() === deleterEmail;
+
+  if (!isHost && !isParticipant) {
+    return { success: false, error: "You can only delete messages in your own direct conversations." };
+  }
+
+  const filtered = dms.filter((m) => m.id !== messageId);
+  localStorage.setItem(DMS_STORAGE_KEY, JSON.stringify(filtered));
+
+  return { success: true };
 }
 
 // --- SIGNAL GROUP CHAT STORE & PERMISSION ENGINE ---
@@ -860,6 +1165,13 @@ export function deleteGroupChatMessage(
 
   const filtered = msgs.filter((m) => m.id !== messageId);
   localStorage.setItem(key, JSON.stringify(filtered));
+
+  // Sync delete with server backend
+  fetch(`/api/community/signal-groups/${groupId}/chat/${messageId}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ deleterEmail }),
+  }).catch(() => {});
 
   return { success: true };
 }

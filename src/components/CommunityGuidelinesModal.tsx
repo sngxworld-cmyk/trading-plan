@@ -47,7 +47,7 @@ export const CommunityGuidelinesModal: React.FC<CommunityGuidelinesModalProps> =
             </h3>
             <ul className="list-disc pl-5 space-y-1.5 text-slate-300">
               <li>
-                <strong className="text-slate-100">Zero Tolerance for Bullying / Inappropriate Content:</strong> You cannot bully others, use offensive/hateful language, or post sexual/inappropriate material in public chat or group discussions. Violators will face an <strong className="text-rose-400">instant permanent ban</strong>.
+                <strong className="text-rose-300">Zero Tolerance for Harassment & Bullying:</strong> If you harass someone, use offensive or hateful language, or post inappropriate/sexual material in public chat, direct messages, or group discussions, that results in an <strong className="text-rose-400 font-bold uppercase tracking-wider">IMMEDIATE PERMANENT BAN</strong>.
               </li>
               <li>
                 <strong className="text-slate-100">Reporting & Bug Bounty:</strong> If there is a system issue, bug, or security vulnerability, contact emergency support immediately at <strong className="text-amber-400 font-mono">+94 75 284 0841</strong>.

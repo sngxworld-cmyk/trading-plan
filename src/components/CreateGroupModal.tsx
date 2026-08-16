@@ -1,8 +1,8 @@
 import React, { useState, useRef } from "react";
 import { UserProfile, SignalGroup } from "../types";
-import { createSignalGroup } from "../lib/communityStore";
+import { createSignalGroup, getUserOwnedSignalGroup, canUserCreateSignalGroup, deleteSignalGroup } from "../lib/communityStore";
 import { isPendingUser } from "../utils/roleUtils";
-import { X, Plus, Shield, Users, Lock, Share2, Copy, Check, Info, Upload, Image as ImageIcon, Sparkles, Award, AlertTriangle } from "lucide-react";
+import { X, Plus, Shield, Users, Lock, Share2, Copy, Check, Info, Upload, Image as ImageIcon, Sparkles, Award, AlertTriangle, Database, Trash2, ArrowRight } from "lucide-react";
 
 interface CreateGroupModalProps {
   currentUser: UserProfile;
@@ -26,7 +26,13 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
   const [adminOnlyChat, setAdminOnlyChat] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [isDeletingExisting, setIsDeletingExisting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Check if current user already owns an active signal group
+  const isHost = (currentUser.email || "").trim().toLowerCase() === "sngxworld@gmail.com";
+  const existingOwnedGroup = getUserOwnedSignalGroup(currentUser);
+  const hasExistingGroup = Boolean(!isHost && existingOwnedGroup);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -43,6 +49,18 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
         }
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const handleDeleteExistingGroup = () => {
+    if (!existingOwnedGroup) return;
+    setIsDeletingExisting(true);
+    const res = deleteSignalGroup(currentUser, existingOwnedGroup.id);
+    setIsDeletingExisting(false);
+    if (res.success) {
+      setErrorMessage(null);
+    } else {
+      setErrorMessage(res.error || "Failed to delete previous group.");
     }
   };
 
@@ -89,8 +107,8 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
               <h2 className="text-base font-bold text-slate-100 font-mono">
                 Create a Signal Group
               </h2>
-              <p className="text-xs text-slate-400">
-                Launch your real trader signal group (Starts Free)
+              <p className="text-xs text-slate-400 font-mono">
+                1 Group Limit per Trader • 20-Year WhatsApp-like Server Archive
               </p>
             </div>
           </div>
@@ -104,6 +122,38 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
 
         {/* Form */}
         <form onSubmit={handleCreate} className="p-6 overflow-y-auto space-y-5">
+          {/* 1 Group per User Policy Alert */}
+          {hasExistingGroup && existingOwnedGroup && (
+            <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/40 space-y-3 font-mono">
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="text-xs text-amber-300 block">
+                    1 Active Signal Group Limit (1/1):
+                  </strong>
+                  <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
+                    You are already the creator of <strong className="text-white font-bold">{existingOwnedGroup.name}</strong>. Each trader can only create <strong>up to 1 signal group</strong> at a time. To launch a new group, you must delete your existing group first.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-amber-500/20">
+                <span className="text-[10px] text-slate-400">
+                  Current: {existingOwnedGroup.membersCount} members • {existingOwnedGroup.totalSignals} signals
+                </span>
+                <button
+                  type="button"
+                  disabled={isDeletingExisting}
+                  onClick={handleDeleteExistingGroup}
+                  className="px-3 py-1.5 rounded-lg bg-rose-600/30 hover:bg-rose-600 text-rose-200 hover:text-white border border-rose-500/40 text-[11px] font-bold transition-all flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{isDeletingExisting ? "Deleting..." : "Delete Current Group to Reset"}</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {isPendingUser(currentUser) && (
             <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-mono flex items-start gap-2.5">
               <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
@@ -128,10 +178,11 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
             <input
               type="text"
               value={name}
+              disabled={hasExistingGroup}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Apex Alpha Signals"
               required
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 placeholder-slate-600 focus:border-indigo-500 focus:outline-none font-mono"
+              className="w-full bg-slate-950 border border-slate-800 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl px-3.5 py-2.5 text-xs text-slate-100 placeholder-slate-600 focus:border-indigo-500 focus:outline-none font-mono"
             />
           </div>
 
@@ -142,11 +193,12 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
             </label>
             <textarea
               value={description}
+              disabled={hasExistingGroup}
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
               placeholder="Describe your signal strategy, target coins, timeframes, and risk rules..."
               required
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 placeholder-slate-600 focus:border-indigo-500 focus:outline-none resize-none font-sans"
+              className="w-full bg-slate-950 border border-slate-800 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl px-3.5 py-2.5 text-xs text-slate-100 placeholder-slate-600 focus:border-indigo-500 focus:outline-none resize-none font-sans"
             />
           </div>
 
@@ -160,6 +212,7 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
               type="file"
               ref={fileInputRef}
               accept="image/*"
+              disabled={hasExistingGroup}
               onChange={handleFileUpload}
               className="hidden"
             />
@@ -180,15 +233,17 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
+                    disabled={hasExistingGroup}
                     onClick={() => fileInputRef.current?.click()}
-                    className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-indigo-300 text-xs font-mono transition-colors"
+                    className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-indigo-300 text-xs font-mono transition-colors disabled:opacity-50"
                   >
                     Change
                   </button>
                   <button
                     type="button"
+                    disabled={hasExistingGroup}
                     onClick={() => setLogoUrl("")}
-                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-900/40 text-slate-400 hover:text-rose-300 transition-colors"
+                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-900/40 text-slate-400 hover:text-rose-300 transition-colors disabled:opacity-50"
                     title="Remove logo"
                   >
                     <X className="w-4 h-4" />
@@ -197,8 +252,10 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
               </div>
             ) : (
               <div
-                onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-slate-800 hover:border-indigo-500/60 rounded-xl p-4 text-center cursor-pointer bg-slate-950/60 hover:bg-slate-950 transition-all flex flex-col items-center justify-center gap-2"
+                onClick={() => !hasExistingGroup && fileInputRef.current?.click()}
+                className={`border-2 border-dashed border-slate-800 rounded-xl p-4 text-center bg-slate-950/60 transition-all flex flex-col items-center justify-center gap-2 ${
+                  hasExistingGroup ? "opacity-50 cursor-not-allowed" : "hover:border-indigo-500/60 hover:bg-slate-950 cursor-pointer"
+                }`}
               >
                 <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
                   <Upload className="w-5 h-5" />
@@ -215,20 +272,26 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
             )}
           </div>
 
-          {/* Subscription & VIP Policy Notice */}
-          <div className="p-4 rounded-xl bg-indigo-950/20 border border-indigo-500/30 space-y-2">
-            <div className="flex items-center gap-2">
-              <Award className="w-4 h-4 text-amber-400 shrink-0" />
-              <span className="text-xs font-bold text-slate-200 font-mono">
-                Performance-Based VIP Subscription Policy
+          {/* Permanent Lifetime Server Archival & VIP Policy Notice */}
+          <div className="p-4 rounded-xl bg-indigo-950/20 border border-indigo-500/30 space-y-2 font-mono">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Database className="w-4 h-4 text-indigo-400 shrink-0" />
+                <span className="text-xs font-bold text-slate-200">
+                  Permanent Lifetime WhatsApp-Like Server Vault
+                </span>
+              </div>
+              <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                Lifetime Vault
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              All newly created signal groups start as <strong className="text-indigo-300">100% Free</strong>. Monthly paid VIP subscriptions (<span className="text-emerald-400 font-mono">$ USD</span>) are restricted and only unlocked for VIP traders once you complete <strong className="text-amber-300">30 trades</strong> with an audited <strong className="text-emerald-400">75%–85%+ win rate</strong> calculation (or chosen by Host Admin).
+            <p className="text-[11px] text-slate-400 leading-relaxed font-sans">
+              All signals, group messages, photos, voice memos, and chart attachments are permanently stored with lifetime server retention — no messages or media will ever be deleted, even after 40+ years.
             </p>
-            <div className="flex items-center gap-2 pt-1 text-[10px] font-mono text-indigo-400">
-              <span className="px-2 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/20">Initial Status: Free Group</span>
-              <span className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">Max VIP Price: $17 USD</span>
+            <div className="flex flex-wrap items-center gap-2 pt-1 text-[10px] text-indigo-300">
+              <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">1 Group / User Limit</span>
+              <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">Lifetime History</span>
+              <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800">VIP Max $17 USD</span>
             </div>
           </div>
 
@@ -246,8 +309,9 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
             </div>
             <button
               type="button"
+              disabled={hasExistingGroup}
               onClick={() => setAdminOnlyChat(!adminOnlyChat)}
-              className={`px-3 py-1 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 ${
+              className={`px-3 py-1 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 disabled:opacity-50 ${
                 adminOnlyChat
                   ? "bg-amber-600/30 text-amber-300 border border-amber-500/40"
                   : "bg-emerald-600/30 text-emerald-300 border border-emerald-500/40"
@@ -277,8 +341,9 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
             </div>
             <button
               type="button"
+              disabled={hasExistingGroup}
               onClick={() => setHideMembers(!hideMembers)}
-              className={`px-3 py-1 rounded-lg text-xs font-mono font-bold transition-all ${
+              className={`px-3 py-1 rounded-lg text-xs font-mono font-bold transition-all disabled:opacity-50 ${
                 hideMembers
                   ? "bg-indigo-600 text-white"
                   : "bg-slate-800 text-slate-400 hover:text-slate-200"
@@ -288,7 +353,7 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
             </button>
           </div>
 
-          {/* Share & Invite Links (Slide 9) */}
+          {/* Share & Invite Links */}
           <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
             <div className="flex items-center justify-between text-xs font-mono text-slate-300">
               <span className="flex items-center gap-1.5">
@@ -315,13 +380,19 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
           {/* Submit */}
           <button
             type="submit"
-            disabled={isPendingUser(currentUser)}
+            disabled={isPendingUser(currentUser) || hasExistingGroup}
             className="w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 transition-all font-mono"
           >
-            <Plus className="w-4 h-4" /> {isPendingUser(currentUser) ? "Locked for Pending Accounts" : "Create Signal Group"}
+            <Plus className="w-4 h-4" />
+            {hasExistingGroup
+              ? "1 Group Limit Reached (Delete Current to Reset)"
+              : isPendingUser(currentUser)
+              ? "Locked for Pending Accounts"
+              : "Create Signal Group"}
           </button>
         </form>
       </div>
     </div>
   );
 };
+

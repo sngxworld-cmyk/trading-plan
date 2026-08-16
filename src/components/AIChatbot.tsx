@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { MessageSquare, X, Send, Bot, User } from "lucide-react";
+import { MessageSquare, X, Send, Bot, User, ArrowDown } from "lucide-react";
 
 interface Message {
   id: string;
@@ -12,7 +12,9 @@ export const AIChatbot: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [inputMsg, setInputMsg] = useState("");
   const [loading, setLoading] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const isNearBottomRef = useRef(true);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -23,13 +25,30 @@ export const AIChatbot: React.FC = () => {
     },
   ]);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
+    const el = chatContainerRef.current;
+    if (el) {
+      el.scrollTo({ top: el.scrollHeight, behavior });
+      isNearBottomRef.current = true;
+      setShowScrollBtn(false);
+    }
   };
 
+  const handleScroll = () => {
+    const el = chatContainerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - (el.scrollTop + el.clientHeight);
+    const isNear = distanceFromBottom < 80;
+    isNearBottomRef.current = isNear;
+    setShowScrollBtn(!isNear);
+  };
+
+  // Scroll to bottom on initial open
   useEffect(() => {
-    if (isOpen) scrollToBottom();
-  }, [messages, isOpen]);
+    if (isOpen) {
+      setTimeout(() => scrollToBottom("auto"), 50);
+    }
+  }, [isOpen]);
 
   const handleSend = async () => {
     if (!inputMsg.trim() || loading) return;
@@ -45,6 +64,7 @@ export const AIChatbot: React.FC = () => {
     };
 
     setMessages((prev) => [...prev, userMsgObj]);
+    setTimeout(() => scrollToBottom("smooth"), 40);
     setLoading(true);
 
     try {
@@ -72,6 +92,9 @@ export const AIChatbot: React.FC = () => {
       };
 
       setMessages((prev) => [...prev, botMsgObj]);
+      if (isNearBottomRef.current) {
+        setTimeout(() => scrollToBottom("smooth"), 40);
+      }
     } catch (err) {
       setMessages((prev) => [
         ...prev,
@@ -82,6 +105,9 @@ export const AIChatbot: React.FC = () => {
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         },
       ]);
+      if (isNearBottomRef.current) {
+        setTimeout(() => scrollToBottom("smooth"), 40);
+      }
     } finally {
       setLoading(false);
     }
@@ -127,48 +153,65 @@ export const AIChatbot: React.FC = () => {
           </div>
 
           {/* Messages Body */}
-          <div className="flex-1 p-3.5 overflow-y-auto space-y-3 font-sans text-xs">
-            {messages.map((m) => (
-              <div
-                key={m.id}
-                className={`flex gap-2 ${
-                  m.sender === "user" ? "justify-end" : "justify-start"
-                }`}
-              >
-                {m.sender === "bot" && (
-                  <div className="w-6 h-6 rounded-md bg-indigo-600/30 text-indigo-400 flex items-center justify-center shrink-0 mt-0.5">
-                    <Bot className="w-3.5 h-3.5" />
-                  </div>
-                )}
-
+          <div className="flex-1 relative overflow-hidden flex flex-col">
+            <div
+              ref={chatContainerRef}
+              onScroll={handleScroll}
+              className="flex-1 p-3.5 overflow-y-auto space-y-3 font-sans text-xs"
+            >
+              {messages.map((m) => (
                 <div
-                  className={`max-w-[80%] p-2.5 rounded-xl text-xs leading-relaxed ${
-                    m.sender === "user"
-                      ? "bg-indigo-600 text-white rounded-tr-none font-medium"
-                      : "bg-slate-950 text-slate-200 border border-slate-800 rounded-tl-none"
+                  key={m.id}
+                  className={`flex gap-2 ${
+                    m.sender === "user" ? "justify-end" : "justify-start"
                   }`}
                 >
-                  <p>{m.text}</p>
-                  <span className="text-[9px] text-slate-400 block text-right mt-1 font-mono">
-                    {m.time}
-                  </span>
-                </div>
+                  {m.sender === "bot" && (
+                    <div className="w-6 h-6 rounded-md bg-indigo-600/30 text-indigo-400 flex items-center justify-center shrink-0 mt-0.5">
+                      <Bot className="w-3.5 h-3.5" />
+                    </div>
+                  )}
 
-                {m.sender === "user" && (
-                  <div className="w-6 h-6 rounded-md bg-slate-800 text-slate-300 flex items-center justify-center shrink-0 mt-0.5">
-                    <User className="w-3.5 h-3.5" />
+                  <div
+                    className={`max-w-[80%] p-2.5 rounded-xl text-xs leading-relaxed ${
+                      m.sender === "user"
+                        ? "bg-indigo-600 text-white rounded-tr-none font-medium"
+                        : "bg-slate-950 text-slate-200 border border-slate-800 rounded-tl-none"
+                    }`}
+                  >
+                    <p>{m.text}</p>
+                    <span className="text-[9px] text-slate-400 block text-right mt-1 font-mono">
+                      {m.time}
+                    </span>
                   </div>
-                )}
-              </div>
-            ))}
 
-            {loading && (
-              <div className="flex gap-2 items-center text-slate-400 text-xs font-mono">
-                <Bot className="w-4 h-4 text-indigo-400 animate-spin" />
-                <span>Thinking...</span>
-              </div>
+                  {m.sender === "user" && (
+                    <div className="w-6 h-6 rounded-md bg-slate-800 text-slate-300 flex items-center justify-center shrink-0 mt-0.5">
+                      <User className="w-3.5 h-3.5" />
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {loading && (
+                <div className="flex gap-2 items-center text-slate-400 text-xs font-mono">
+                  <Bot className="w-4 h-4 text-indigo-400 animate-spin" />
+                  <span>Thinking...</span>
+                </div>
+              )}
+            </div>
+
+            {/* Jump to latest button */}
+            {showScrollBtn && (
+              <button
+                type="button"
+                onClick={() => scrollToBottom("smooth")}
+                className="absolute bottom-2 right-4 z-20 px-2.5 py-1 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-[11px] font-bold flex items-center gap-1 shadow-lg shadow-indigo-600/40 border border-indigo-400/40 transition-all hover:scale-105 active:scale-95"
+              >
+                <ArrowDown className="w-3 h-3 animate-bounce" />
+                <span>Jump to latest</span>
+              </button>
             )}
-            <div ref={messagesEndRef} />
           </div>
 
           {/* Input Area */}

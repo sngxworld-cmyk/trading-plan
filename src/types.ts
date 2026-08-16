@@ -20,11 +20,16 @@ export interface UserProfile {
   dob?: string;
   bio?: string;
   tradingPair?: string;
+  tradingMarket?: "Crypto Market" | "Forex Market" | "Futures Market" | "Stock Market" | string;
   startingCapital?: string;
   role: UserRole;
   platformRole?: PlatformRole;
   status: UserStatus;
   hideIdentity?: boolean;
+  subOwnerExpiresAt?: string;
+  subOwnerAssignedAt?: string;
+  subOwnerDurationDays?: number;
+  subOwnerNote?: string;
   createdAt?: string;
   lastLogin?: string;
   tradingData?: TradingDataStore | null;
@@ -175,12 +180,61 @@ export interface AdminUserRecord {
   dob?: string;
   bio?: string;
   tradingPair?: string;
+  tradingMarket?: "Crypto Market" | "Forex Market" | "Futures Market" | "Stock Market" | string;
   startingCapital?: string;
   role: UserRole;
+  platformRole?: PlatformRole;
   status: UserStatus;
+  subOwnerExpiresAt?: string;
+  subOwnerAssignedAt?: string;
+  subOwnerDurationDays?: number;
+  subOwnerNote?: string;
   createdAt: string;
   lastLogin?: string;
   hasData?: boolean;
+}
+
+export interface SubOwnerRequest {
+  id: string;
+  subOwnerEmail: string;
+  subOwnerUsername: string;
+  subOwnerDisplayName: string;
+  actionType:
+    | "approve_user"
+    | "reject_user"
+    | "change_role"
+    | "delete_user"
+    | "add_gmail"
+    | "delete_group"
+    | "delete_message"
+    | "reset_password"
+    | "custom_action";
+  targetEmail?: string;
+  targetUsername?: string;
+  targetId?: string;
+  title: string;
+  description: string;
+  payload?: any;
+  status: "pending" | "approved" | "rejected";
+  createdAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  subOwnerNote?: string;
+  ownerResponseNote?: string;
+}
+
+export interface ModeratorReport {
+  id: string;
+  reportedByEmail: string;
+  reportedByUsername: string;
+  reportedByDisplayName?: string;
+  category: "bug" | "user_feedback" | "harassment" | "signal_inquiry" | "urgent_issue";
+  subject: string;
+  message: string;
+  status: "open" | "reviewed" | "resolved";
+  createdAt: string;
+  handledBy?: string;
+  adminNotes?: string;
 }
 
 export interface AuditLogItem {

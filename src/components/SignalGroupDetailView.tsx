@@ -17,6 +17,9 @@ import {
   canUserChatInGroup,
   sendDirectMessage,
   getSignalGroups,
+  addMemberToSignalGroup,
+  removeMemberFromSignalGroup,
+  updateSignalGroupDetails,
 } from "../lib/communityStore";
 import { downloadImageToLocal } from "../utils/fileUtils";
 import {
@@ -54,9 +57,17 @@ import {
   Key,
   HelpCircle,
   Download,
+  ArrowDown,
+  UserPlus,
+  UserMinus,
+  Share2,
+  Copy,
+  Upload,
+  Search,
 } from "lucide-react";
 import { CreateSignalModal } from "./CreateSignalModal";
 import { CommunityGuidelinesModal } from "./CommunityGuidelinesModal";
+import { ChatDateDivider, isDifferentChatDay, formatMessageTime } from "../utils/chatDateUtils";
 
 interface SignalGroupDetailViewProps {
   group: SignalGroup;
@@ -81,9 +92,32 @@ export const SignalGroupDetailView: React.FC<SignalGroupDetailViewProps> = ({
   const [isCreateSignalOpen, setIsCreateSignalOpen] = useState(false);
   const [isGuidelinesOpen, setIsGuidelinesOpen] = useState(false);
   const [isVipModalOpen, setIsVipModalOpen] = useState(false);
-  const [isChatSettingsOpen, setIsChatSettingsOpen] = useState(false);
+  const [isGroupSettingsOpen, setIsGroupSettingsOpen] = useState(false);
+  const [isAddMemberModalOpen, setIsAddMemberModalOpen] = useState(false);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [voteMessage, setVoteMessage] = useState<string | null>(null);
+
+  // Group Settings Form State
+  const [editGroupName, setEditGroupName] = useState(group.name);
+  const [editGroupDesc, setEditGroupDesc] = useState(group.description);
+  const [editGroupLogo, setEditGroupLogo] = useState(group.logoUrl || "");
+  const [editAdminOnlyChat, setEditAdminOnlyChat] = useState(group.adminOnlyChat);
+  const [editHideMembers, setEditHideMembers] = useState(group.hideMembers || false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [settingsSuccess, setSettingsSuccess] = useState<string | null>(null);
+
+  // Add Member State
+  const [newMemberInput, setNewMemberInput] = useState("");
+  const [grantNewMemberChat, setGrantNewMemberChat] = useState(false);
+  const [addMemberError, setAddMemberError] = useState<string | null>(null);
+  const [addMemberSuccess, setAddMemberSuccess] = useState<string | null>(null);
+  const [memberSearchQuery, setMemberSearchQuery] = useState("");
+  const [copiedInvite, setCopiedInvite] = useState(false);
+
+  // Remove / Delete Member State
+  const [memberToDelete, setMemberToDelete] = useState<string | null>(null);
+  const [removeMemberError, setRemoveMemberError] = useState<string | null>(null);
+  const [isRemovingMember, setIsRemovingMember] = useState(false);
 
   // Group Chat State
   const [chatMessages, setChatMessages] = useState<GroupChatMessage[]>(() => {
@@ -99,8 +133,14 @@ export const SignalGroupDetailView: React.FC<SignalGroupDetailViewProps> = ({
   const [voiceSeconds, setVoiceSeconds] = useState(0);
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Group chat smart scroll refs
+  const groupChatContainerRef = useRef<HTMLDivElement>(null);
+  const isChatNearBottomRef = useRef(true);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const prevChatLatestIdRef = useRef<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const settingsLogoInputRef = useRef<HTMLInputElement>(null);
   const voiceTimerRef = useRef<any>(null);
 
   // VIP Subscription Form State
@@ -125,6 +165,25 @@ export const SignalGroupDetailView: React.FC<SignalGroupDetailViewProps> = ({
   const allowedList = (group.allowedChatMembers || []).map((e) => e.toLowerCase());
   const isExplicitlyAllowed = allowedList.includes(currentUser.email.toLowerCase());
 
+  // Scroll helpers
+  const scrollChatToBottom = (behavior: ScrollBehavior = "smooth") => {
+    const el = groupChatContainerRef.current;
+    if (el) {
+      el.scrollTo({ top: el.scrollHeight, behavior });
+      isChatNearBottomRef.current = true;
+      setShowScrollBtn(false);
+    }
+  };
+
+  const handleChatScroll = () => {
+    const el = groupChatContainerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - (el.scrollTop + el.clientHeight);
+    const isNear = distanceFromBottom < 100;
+    isChatNearBottomRef.current = isNear;
+    setShowScrollBtn(!isNear);
+  };
+
   // Polling / Auto-refresh for group chat & signals
   useEffect(() => {
     const interval = setInterval(() => {
@@ -138,12 +197,35 @@ export const SignalGroupDetailView: React.FC<SignalGroupDetailViewProps> = ({
     return () => clearInterval(interval);
   }, [group.id]);
 
-  // Scroll to bottom of chat on new message or tab switch
+  // Smart Chat Scroll: Only scroll on tab open or when a real new message arrives and user is near bottom
+  useEffect(() => {
+    if (activeTab !== "chat") return;
+    const latestMsg = chatMessages[chatMessages.length - 1];
+    const latestId = latestMsg?.id || null;
+
+    // First time entering chat tab
+    if (!prevChatLatestIdRef.current) {
+      prevChatLatestIdRef.current = latestId;
+      setTimeout(() => scrollChatToBottom("auto"), 50);
+      return;
+    }
+
+    // Check if new message was appended
+    if (latestId && latestId !== prevChatLatestIdRef.current) {
+      prevChatLatestIdRef.current = latestId;
+      const isSentByMe = latestMsg.senderEmail.toLowerCase() === currentUser.email.toLowerCase();
+      if (isSentByMe || isChatNearBottomRef.current) {
+        scrollChatToBottom("smooth");
+      }
+    }
+  }, [chatMessages, activeTab, currentUser.email]);
+
+  // On tab switch to chat
   useEffect(() => {
     if (activeTab === "chat") {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      setTimeout(() => scrollChatToBottom("auto"), 50);
     }
-  }, [chatMessages, activeTab]);
+  }, [activeTab]);
 
   const refreshSignals = () => {
     setSignals(getSignals().filter((s) => s.groupId === group.id));
@@ -245,6 +327,7 @@ export const SignalGroupDetailView: React.FC<SignalGroupDetailViewProps> = ({
     setShowPhotoInput(false);
     setIsAnnouncementMode(false);
     refreshChat();
+    setTimeout(() => scrollChatToBottom("smooth"), 40);
   };
 
   const handleImageFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -289,6 +372,7 @@ export const SignalGroupDetailView: React.FC<SignalGroupDetailViewProps> = ({
 
     if (res.success) {
       refreshChat();
+      setTimeout(() => scrollChatToBottom("smooth"), 40);
     } else {
       setChatError(res.error || "Failed to send voice note.");
     }
@@ -374,6 +458,123 @@ export const SignalGroupDetailView: React.FC<SignalGroupDetailViewProps> = ({
     }
   };
 
+  // Add Member Handler (Group Admin / Host)
+  const handleAddMemberSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setAddMemberError(null);
+    setAddMemberSuccess(null);
+
+    if (!newMemberInput.trim()) {
+      setAddMemberError("Please enter a valid member email address or username.");
+      return;
+    }
+
+    const res = addMemberToSignalGroup(
+      currentUser,
+      group.id,
+      newMemberInput.trim(),
+      grantNewMemberChat
+    );
+
+    if (res.success && res.group) {
+      setGroup(res.group);
+      setAddMemberSuccess(`Added ${res.addedMember} to group members!`);
+      setChatSuccessToast(`Added ${res.addedMember} to ${res.group.name}!`);
+      setNewMemberInput("");
+      setTimeout(() => {
+        setAddMemberSuccess(null);
+        setIsAddMemberModalOpen(false);
+      }, 1500);
+      setTimeout(() => setChatSuccessToast(null), 3500);
+    } else {
+      setAddMemberError(res.error || "Failed to add member.");
+    }
+  };
+
+  // Remove / Delete Member Trigger (opens custom confirmation modal)
+  const handleRemoveMember = (memberEmail: string) => {
+    setRemoveMemberError(null);
+    setMemberToDelete(memberEmail);
+  };
+
+  // Confirm and execute member deletion
+  const confirmRemoveMemberAction = () => {
+    if (!memberToDelete) return;
+    setIsRemovingMember(true);
+    setRemoveMemberError(null);
+
+    const res = removeMemberFromSignalGroup(currentUser, group.id, memberToDelete);
+    if (res.success && res.group) {
+      setGroup(res.group);
+      setChatSuccessToast(`Removed ${memberToDelete} from ${group.name}.`);
+      setMemberToDelete(null);
+      setIsRemovingMember(false);
+      setTimeout(() => setChatSuccessToast(null), 3500);
+    } else {
+      setIsRemovingMember(false);
+      setRemoveMemberError(res.error || "Failed to remove member from group.");
+    }
+  };
+
+  // Save Group Settings Handler
+  const handleSaveGroupSettings = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSettingsError(null);
+    setSettingsSuccess(null);
+
+    if (!editGroupName.trim()) {
+      setSettingsError("Group name cannot be empty.");
+      return;
+    }
+
+    const res = updateSignalGroupDetails(currentUser, group.id, {
+      name: editGroupName.trim(),
+      description: editGroupDesc.trim(),
+      logoUrl: editGroupLogo,
+      adminOnlyChat: editAdminOnlyChat,
+      hideMembers: editHideMembers,
+    });
+
+    if (res.success && res.group) {
+      setGroup(res.group);
+      setSettingsSuccess("Group settings saved successfully!");
+      setChatSuccessToast("Group settings updated!");
+      setTimeout(() => {
+        setSettingsSuccess(null);
+        setIsGroupSettingsOpen(false);
+      }, 1400);
+      setTimeout(() => setChatSuccessToast(null), 3500);
+    } else {
+      setSettingsError(res.error || "Failed to update group settings.");
+    }
+  };
+
+  // Logo file upload
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        setSettingsError("Logo image size must be under 5MB.");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === "string") {
+          setEditGroupLogo(reader.result);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Copy Group Link
+  const copyInviteLink = () => {
+    const url = `${window.location.origin}/#group-${group.id}`;
+    navigator.clipboard.writeText(url);
+    setCopiedInvite(true);
+    setTimeout(() => setCopiedInvite(false), 2500);
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       {/* Top Header Card */}
@@ -383,11 +584,16 @@ export const SignalGroupDetailView: React.FC<SignalGroupDetailViewProps> = ({
             <button
               onClick={onBack}
               className="p-2 rounded-xl bg-slate-950 border border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition-colors"
+              title="Back to All Groups"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
 
-            <div className="w-12 h-12 rounded-xl bg-slate-800 border border-slate-700 overflow-hidden flex items-center justify-center text-slate-300 font-bold font-mono">
+            <div 
+              onClick={() => group.logoUrl && setZoomedImage(group.logoUrl)}
+              className={`w-12 h-12 rounded-xl bg-slate-800 border border-slate-700 overflow-hidden flex items-center justify-center text-slate-300 font-bold font-mono ${group.logoUrl ? "cursor-pointer hover:border-indigo-500 transition-colors" : ""}`}
+              title={group.logoUrl ? "Click to preview logo" : undefined}
+            >
               {group.logoUrl ? (
                 <img
                   src={group.logoUrl}
@@ -434,13 +640,21 @@ export const SignalGroupDetailView: React.FC<SignalGroupDetailViewProps> = ({
                   {group.adminDisplayName || group.adminUsername}
                 </button>
                 <span>•</span>
-                <span className="flex items-center gap-1">
-                  <Users className="w-3 h-3" /> {group.membersCount} members
-                </span>
+                <button
+                  onClick={() => setActiveTab("members")}
+                  className="flex items-center gap-1 text-slate-300 hover:text-indigo-300 transition-colors"
+                  title="View group members"
+                >
+                  <Users className="w-3 h-3 text-indigo-400" /> {group.membersCount} members
+                </button>
                 <span>•</span>
-                <span className="text-emerald-400 font-bold">
+                <button
+                  onClick={() => setActiveTab("signals")}
+                  className="text-emerald-400 hover:text-emerald-300 font-bold transition-colors"
+                  title="View trade signals & win rate"
+                >
                   {group.winRate > 0 ? `${group.winRate}% Win Rate` : "Win Rate calculating..."} ({group.totalSignals} closed)
-                </span>
+                </button>
               </p>
             </div>
           </div>
@@ -456,11 +670,38 @@ export const SignalGroupDetailView: React.FC<SignalGroupDetailViewProps> = ({
 
             {isAdmin && (
               <button
+                onClick={() => setIsAddMemberModalOpen(true)}
+                className="px-3 py-2 rounded-xl bg-indigo-950/60 hover:bg-indigo-900/80 border border-indigo-500/40 text-indigo-300 text-xs font-mono font-bold flex items-center gap-1.5 transition-all shadow-sm"
+                title="Add Members to Signal Group (Group Admin Only)"
+              >
+                <UserPlus className="w-3.5 h-3.5 text-indigo-400" /> + Group Members
+              </button>
+            )}
+
+            {isAdmin && (
+              <button
+                onClick={() => {
+                  setEditGroupName(group.name);
+                  setEditGroupDesc(group.description);
+                  setEditGroupLogo(group.logoUrl || "");
+                  setEditAdminOnlyChat(group.adminOnlyChat);
+                  setEditHideMembers(group.hideMembers || false);
+                  setIsGroupSettingsOpen(true);
+                }}
+                className="px-3 py-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-200 text-xs font-mono flex items-center gap-1.5 transition-colors"
+                title="Group Settings & Admin Configuration"
+              >
+                <Settings className="w-3.5 h-3.5 text-slate-400" /> Group Settings
+              </button>
+            )}
+
+            {isAdmin && (
+              <button
                 onClick={() => setIsVipModalOpen(true)}
-                className="px-3 py-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-indigo-300 text-xs font-mono flex items-center gap-1.5 transition-colors"
+                className="px-3 py-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-amber-300 text-xs font-mono flex items-center gap-1.5 transition-colors"
                 title="VIP Monetization Settings"
               >
-                <Settings className="w-3.5 h-3.5" /> VIP Subscription
+                <DollarSign className="w-3.5 h-3.5 text-amber-400" /> VIP Subscription
               </button>
             )}
 
@@ -636,26 +877,32 @@ export const SignalGroupDetailView: React.FC<SignalGroupDetailViewProps> = ({
             </div>
           ) : (
             <div className="space-y-4">
-              {signals.map((sig) => {
+              {signals.map((sig, index) => {
                 const hasVoted = sig.votes && sig.votes[currentUser.email.toLowerCase()];
                 const isVotingActive = sig.status === "voting";
                 const isClosed = sig.status === "closed";
+                const prevSig = index > 0 ? signals[index - 1] : null;
+                const showDateDivider = isDifferentChatDay(prevSig?.createdAt, sig.createdAt);
 
                 return (
-                  <div
-                    key={sig.id}
-                    className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl"
-                  >
-                    {/* Signal Header */}
-                    <div className="p-4 bg-slate-950/80 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-slate-100 font-mono bg-indigo-950/60 border border-indigo-500/30 px-2.5 py-1 rounded-lg">
-                          {sig.tradeNumberStr}
-                        </span>
-                        <span className="text-xs text-slate-400 font-mono">
-                          -(USER) {sig.adminEmail.split("@")[0].toUpperCase()} (ADMIN)
-                        </span>
-                      </div>
+                  <React.Fragment key={sig.id}>
+                    {showDateDivider && <ChatDateDivider date={sig.createdAt} />}
+                    <div
+                      className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl"
+                    >
+                      {/* Signal Header */}
+                      <div className="p-4 bg-slate-950/80 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-100 font-mono bg-indigo-950/60 border border-indigo-500/30 px-2.5 py-1 rounded-lg">
+                            {sig.tradeNumberStr}
+                          </span>
+                          <span className="text-xs text-slate-400 font-mono">
+                            -(USER) {sig.adminEmail.split("@")[0].toUpperCase()} (ADMIN)
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            • {formatMessageTime(sig.createdAt)}
+                          </span>
+                        </div>
 
                       {/* Status Indicator */}
                       {sig.status === "open" && (
@@ -830,8 +1077,9 @@ export const SignalGroupDetailView: React.FC<SignalGroupDetailViewProps> = ({
                       )}
                     </div>
                   </div>
-                );
-              })}
+                </React.Fragment>
+              );
+            })}
             </div>
           )}
         </div>
@@ -899,160 +1147,178 @@ export const SignalGroupDetailView: React.FC<SignalGroupDetailViewProps> = ({
           </div>
 
           {/* Chat Messages Feed */}
-          <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-slate-950/40">
-            {chatMessages.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-3 text-slate-500">
-                <MessageSquare className="w-10 h-10 stroke-1 text-slate-600" />
-                <p className="text-xs font-mono">No messages posted in this channel yet.</p>
-                <p className="text-[11px] text-slate-600 max-w-xs">
-                  {group.adminOnlyChat
-                    ? "The group admin will post signal updates and announcements here."
-                    : "Be the first to say hello or discuss the latest market trends!"}
-                </p>
-              </div>
-            ) : (
-              chatMessages.map((msg) => {
-                const isMsgAdmin =
-                  msg.senderEmail.toLowerCase() === group.adminEmail.toLowerCase() ||
-                  msg.senderEmail.toLowerCase() === "sngxworld@gmail.com";
-                const isMe = msg.senderEmail.toLowerCase() === currentUser.email.toLowerCase();
+          <div className="flex-1 relative overflow-hidden flex flex-col">
+            <div
+              ref={groupChatContainerRef}
+              onScroll={handleChatScroll}
+              className="flex-1 p-4 overflow-y-auto space-y-4 bg-slate-950/40"
+            >
+              {chatMessages.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-3 text-slate-500">
+                  <MessageSquare className="w-10 h-10 stroke-1 text-slate-600" />
+                  <p className="text-xs font-mono">No messages posted in this channel yet.</p>
+                  <p className="text-[11px] text-slate-600 max-w-xs">
+                    {group.adminOnlyChat
+                      ? "The group admin will post signal updates and announcements here."
+                      : "Be the first to say hello or discuss the latest market trends!"}
+                  </p>
+                </div>
+              ) : (
+                chatMessages.map((msg, index) => {
+                  const isMsgAdmin =
+                    msg.senderEmail.toLowerCase() === group.adminEmail.toLowerCase() ||
+                    msg.senderEmail.toLowerCase() === "sngxworld@gmail.com";
+                  const isMe = msg.senderEmail.toLowerCase() === currentUser.email.toLowerCase();
+                  const prevMsg = index > 0 ? chatMessages[index - 1] : null;
+                  const showDateDivider = isDifferentChatDay(prevMsg?.createdAt, msg.createdAt);
 
-                return (
-                  <div
-                    key={msg.id}
-                    className={`flex items-start gap-3 group animate-in fade-in duration-200 ${
-                      msg.isAnnouncement
-                        ? "p-3.5 rounded-2xl bg-amber-950/20 border border-amber-500/30 my-2"
-                        : ""
-                    }`}
-                  >
-                    {/* User Avatar */}
-                    <div className="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 overflow-hidden flex items-center justify-center shrink-0 font-mono font-bold text-xs text-indigo-300">
-                      {msg.senderPhotoURL ? (
-                        <img
-                          src={msg.senderPhotoURL}
-                          alt={msg.senderDisplayName}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        msg.senderDisplayName.substring(0, 2).toUpperCase()
-                      )}
-                    </div>
+                  return (
+                    <React.Fragment key={msg.id}>
+                      {showDateDivider && <ChatDateDivider date={msg.createdAt} />}
+                      <div
+                        className={`flex items-start gap-3 group animate-in fade-in duration-200 ${
+                          msg.isAnnouncement
+                            ? "p-3.5 rounded-2xl bg-amber-950/20 border border-amber-500/30 my-2"
+                            : ""
+                        }`}
+                      >
+                        {/* User Avatar */}
+                        <div className="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 overflow-hidden flex items-center justify-center shrink-0 font-mono font-bold text-xs text-indigo-300">
+                          {msg.senderPhotoURL ? (
+                            <img
+                              src={msg.senderPhotoURL}
+                              alt={msg.senderDisplayName}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            msg.senderDisplayName.substring(0, 2).toUpperCase()
+                          )}
+                        </div>
 
-                    {/* Content Box */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <button
-                          onClick={() =>
-                            onOpenProfile({
-                              email: msg.senderEmail,
-                              username: msg.senderUsername,
-                              displayName: msg.senderDisplayName,
-                              role: msg.senderRole,
-                            })
-                          }
-                          className="text-xs font-bold text-slate-200 hover:text-indigo-400 font-mono truncate"
-                        >
-                          {msg.senderDisplayName}
-                        </button>
-                        <RoleBadge role={msg.senderRole} size="xs" />
-                        {isMsgAdmin && (
-                          <span className="px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[9px] font-mono font-bold">
-                            GROUP ADMIN
-                          </span>
-                        )}
-                        {msg.isAnnouncement && (
-                          <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9px] font-mono font-bold flex items-center gap-0.5">
-                            <Megaphone className="w-2.5 h-2.5" /> ANNOUNCEMENT
-                          </span>
-                        )}
-                        <span className="text-[10px] text-slate-500 font-mono ml-auto shrink-0">
-                          {new Date(msg.createdAt).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
+                        {/* Content Box */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <button
+                              onClick={() =>
+                                onOpenProfile({
+                                  email: msg.senderEmail,
+                                  username: msg.senderUsername,
+                                  displayName: msg.senderDisplayName,
+                                  role: msg.senderRole,
+                                })
+                              }
+                              className="text-xs font-bold text-slate-200 hover:text-indigo-400 font-mono truncate"
+                            >
+                              {msg.senderDisplayName}
+                            </button>
+                            <RoleBadge role={msg.senderRole} size="xs" />
+                            {isMsgAdmin && (
+                              <span className="px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[9px] font-mono font-bold">
+                                GROUP ADMIN
+                              </span>
+                            )}
+                            {msg.isAnnouncement && (
+                              <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9px] font-mono font-bold flex items-center gap-0.5">
+                                <Megaphone className="w-2.5 h-2.5" /> ANNOUNCEMENT
+                              </span>
+                            )}
+                            <span className="text-[10px] text-slate-500 font-mono ml-auto shrink-0">
+                              {formatMessageTime(msg.createdAt)}
+                            </span>
 
-                        {/* Delete message button (Admin or author) */}
-                        {(isAdmin || isMe) && (
-                          <button
-                            onClick={() => handleDeleteMessage(msg.id)}
-                            className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-rose-400 transition-opacity"
-                            title="Delete message"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                            {/* Delete message button (Admin or author) */}
+                            {(isAdmin || isMe) && (
+                              <button
+                                onClick={() => handleDeleteMessage(msg.id)}
+                                className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-rose-400 transition-opacity"
+                                title="Delete message"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Text content */}
+                          {msg.content && (
+                            <p className="text-xs text-slate-300 font-sans leading-relaxed whitespace-pre-wrap break-words">
+                              {msg.content}
+                            </p>
+                          )}
+
+                          {/* Photo Attachment with Zoom & Download */}
+                          {msg.photoUrl && (
+                            <div className="mt-2 relative max-w-sm rounded-xl overflow-hidden border border-slate-800 bg-slate-950 group">
+                              <img
+                                src={msg.photoUrl}
+                                alt="Attached chart"
+                                className="w-full h-auto max-h-64 object-cover cursor-pointer hover:opacity-95"
+                                onClick={() => setZoomedImage(msg.photoUrl || null)}
+                              />
+                              <div className="absolute bottom-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    downloadImageToLocal(msg.photoUrl!, `chat_photo_${msg.id}.png`);
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-slate-950/90 hover:bg-indigo-600 text-slate-200 text-[10px] font-mono flex items-center gap-1 shadow-lg transition-all border border-slate-800 hover:border-indigo-500"
+                                  title="Download Photo to Device"
+                                >
+                                  <Download className="w-3 h-3 text-indigo-300" />
+                                  <span>Download</span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Audio Note player */}
+                        {msg.audioUrl && (
+                          <div className="mt-2 p-2.5 rounded-xl bg-slate-950 border border-indigo-500/30 flex items-center gap-3 max-w-xs">
+                            <button
+                              onClick={() =>
+                                setPlayingAudioId(playingAudioId === msg.id ? null : msg.id)
+                              }
+                              className="w-8 h-8 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center shrink-0"
+                            >
+                              <Volume2 className="w-4 h-4" />
+                            </button>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-1 h-3">
+                                {[30, 60, 40, 80, 50, 90, 70, 40, 60, 85, 30].map((h, i) => (
+                                  <div
+                                    key={i}
+                                    className={`w-1 rounded-full ${
+                                      playingAudioId === msg.id ? "bg-indigo-400 animate-pulse" : "bg-slate-700"
+                                    }`}
+                                    style={{ height: `${h}%` }}
+                                  />
+                                ))}
+                              </div>
+                              <span className="text-[10px] text-indigo-300 font-mono block mt-1">
+                                {playingAudioId === msg.id ? "Playing audio..." : "Voice Analysis Note"}
+                              </span>
+                            </div>
+                          </div>
                         )}
                       </div>
-
-                      {/* Text content */}
-                      {msg.content && (
-                        <p className="text-xs text-slate-300 font-sans leading-relaxed whitespace-pre-wrap break-words">
-                          {msg.content}
-                        </p>
-                      )}
-
-                      {/* Photo Attachment with Zoom & Download */}
-                      {msg.photoUrl && (
-                        <div className="mt-2 relative max-w-sm rounded-xl overflow-hidden border border-slate-800 bg-slate-950 group">
-                          <img
-                            src={msg.photoUrl}
-                            alt="Attached chart"
-                            className="w-full h-auto max-h-64 object-cover cursor-pointer hover:opacity-95"
-                            onClick={() => setZoomedImage(msg.photoUrl || null)}
-                          />
-                          <div className="absolute bottom-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                downloadImageToLocal(msg.photoUrl!, `chat_photo_${msg.id}.png`);
-                              }}
-                              className="px-2.5 py-1 rounded-lg bg-slate-950/90 hover:bg-indigo-600 text-slate-200 text-[10px] font-mono flex items-center gap-1 shadow-lg transition-all border border-slate-800 hover:border-indigo-500"
-                              title="Download Photo to Device"
-                            >
-                              <Download className="w-3 h-3 text-indigo-300" />
-                              <span>Download</span>
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Audio Note player */}
-                      {msg.audioUrl && (
-                        <div className="mt-2 p-2.5 rounded-xl bg-slate-950 border border-indigo-500/30 flex items-center gap-3 max-w-xs">
-                          <button
-                            onClick={() =>
-                              setPlayingAudioId(playingAudioId === msg.id ? null : msg.id)
-                            }
-                            className="w-8 h-8 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center shrink-0"
-                          >
-                            <Volume2 className="w-4 h-4" />
-                          </button>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-1 h-3">
-                              {[30, 60, 40, 80, 50, 90, 70, 40, 60, 85, 30].map((h, i) => (
-                                <div
-                                  key={i}
-                                  className={`w-1 rounded-full ${
-                                    playingAudioId === msg.id ? "bg-indigo-400 animate-pulse" : "bg-slate-700"
-                                  }`}
-                                  style={{ height: `${h}%` }}
-                                />
-                              ))}
-                            </div>
-                            <span className="text-[10px] text-indigo-300 font-mono block mt-1">
-                              {playingAudioId === msg.id ? "Playing audio..." : "Voice Analysis Note"}
-                            </span>
-                          </div>
-                        </div>
-                      )}
                     </div>
-                  </div>
+                  </React.Fragment>
                 );
               })
+              )}
+            </div>
+
+            {/* Floating Jump to Latest Button */}
+            {showScrollBtn && (
+              <button
+                type="button"
+                onClick={() => scrollChatToBottom("smooth")}
+                className="absolute bottom-4 right-6 z-20 px-3.5 py-1.5 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs font-bold flex items-center gap-1.5 shadow-xl shadow-indigo-600/40 border border-indigo-400/40 transition-all hover:scale-105 active:scale-95"
+              >
+                <ArrowDown className="w-3.5 h-3.5 animate-bounce" />
+                <span>Jump to latest</span>
+              </button>
             )}
-            <div ref={messagesEndRef} />
           </div>
 
           {/* Chat Composer Bar */}
@@ -1244,133 +1510,591 @@ export const SignalGroupDetailView: React.FC<SignalGroupDetailViewProps> = ({
                 <Users className="w-5 h-5 text-indigo-400" /> Group Members & Talk Permissions
               </h2>
               <p className="text-xs text-slate-400 mt-0.5 font-mono">
-                Manage who is authorized to send messages and announcements in this group.
+                Manage who is authorized to send messages, signals, and announcements in this group.
               </p>
             </div>
 
-            {isAdmin && (
-              <button
-                onClick={handleQuickToggleAdminOnly}
-                className={`px-4 py-2 rounded-xl text-xs font-mono font-bold flex items-center gap-2 border shadow-lg transition-all ${
-                  group.adminOnlyChat
-                    ? "bg-amber-950/40 border-amber-600/50 text-amber-300"
-                    : "bg-emerald-950/40 border-emerald-600/50 text-emerald-300"
-                }`}
-              >
-                {group.adminOnlyChat ? (
-                  <>
-                    <Lock className="w-4 h-4 text-amber-400" /> Mode: Admin-Only Talk
-                  </>
-                ) : (
-                  <>
-                    <Unlock className="w-4 h-4 text-emerald-400" /> Mode: All Members Can Talk
-                  </>
-                )}
-              </button>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setIsAddMemberModalOpen(true)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 transition-all uppercase tracking-wider"
+                  title="Add members to group (Group Admin Only)"
+                >
+                  <UserPlus className="w-4 h-4" /> + Add Group Members
+                </button>
+              )}
+
+              {isAdmin && (
+                <button
+                  onClick={handleQuickToggleAdminOnly}
+                  className={`px-4 py-2 rounded-xl text-xs font-mono font-bold flex items-center gap-2 border shadow-lg transition-all ${
+                    group.adminOnlyChat
+                      ? "bg-amber-950/40 border-amber-600/50 text-amber-300"
+                      : "bg-emerald-950/40 border-emerald-600/50 text-emerald-300"
+                  }`}
+                >
+                  {group.adminOnlyChat ? (
+                    <>
+                      <Lock className="w-4 h-4 text-amber-400" /> Mode: Admin-Only Talk
+                    </>
+                  ) : (
+                    <>
+                      <Unlock className="w-4 h-4 text-emerald-400" /> Mode: All Members Can Talk
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Mode Explanation Card */}
           <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-mono">
-            <div className="space-y-1">
-              <span className="text-slate-400 block font-bold">1. Admin-Only Talk Mode</span>
-              <p className="text-slate-500 text-[11px] leading-relaxed">
+            <div className="space-y-1.5 p-3 rounded-xl bg-slate-900/60 border border-slate-800/80">
+              <span className="text-slate-200 block font-bold">1. Admin-Only Talk Mode</span>
+              <p className="text-slate-400 text-[11px] leading-relaxed">
                 When active, all standard members are in read-only mode to prevent spam. Only the Group Admin and members you explicitly whitelist below can post.
               </p>
             </div>
-            <div className="space-y-1">
-              <span className="text-slate-400 block font-bold">2. Open Discussion Mode</span>
-              <p className="text-slate-500 text-[11px] leading-relaxed">
+            
+            {/* POINT NO 2: Open Discussion Mode with (+ Group Members [Only for Group Admin]) Button */}
+            <div className="space-y-2.5 p-3 rounded-xl bg-slate-900/60 border border-indigo-500/30 shadow-inner">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-slate-200 block font-bold flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-400" /> 2. Open Discussion Mode & Member Access
+                </span>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setIsAddMemberModalOpen(true)}
+                    className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[10px] font-mono uppercase tracking-wider flex items-center gap-1 shadow-md shadow-indigo-600/30 transition-all"
+                    title="Add members to group (Group Admin Only)"
+                  >
+                    <UserPlus className="w-3 h-3" /> (+group members [only for group admin])
+                  </button>
+                )}
+              </div>
+              <p className="text-slate-400 text-[11px] leading-relaxed">
                 When active, all registered group members can freely text, share trading charts, and send voice analysis notes.
               </p>
+              <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2 text-[10px]">
+                <button
+                  type="button"
+                  onClick={copyInviteLink}
+                  className="text-indigo-400 hover:text-indigo-300 font-mono flex items-center gap-1 transition-colors"
+                >
+                  <Copy className="w-3 h-3" /> {copiedInvite ? "Invite Link Copied!" : "Copy Group Invite Link"}
+                </button>
+                {isAdmin && (
+                  <span className="text-emerald-400 font-bold font-mono">
+                    Admin Active: Full Member Control
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
           {/* Members List */}
           <div className="space-y-3">
-            <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider font-mono">
-              Group Participants ({group.members.length})
-            </h3>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider font-mono flex items-center gap-2">
+                <span>Group Participants ({group.members.length})</span>
+                {isAdmin && (
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 font-normal">
+                    Admin Control
+                  </span>
+                )}
+              </h3>
+
+              {/* Search Member Filter */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  value={memberSearchQuery}
+                  onChange={(e) => setMemberSearchQuery(e.target.value)}
+                  placeholder="Search group members..."
+                  className="bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 font-mono focus:border-indigo-500 focus:outline-none w-56"
+                />
+              </div>
+            </div>
 
             <div className="divide-y divide-slate-800 border border-slate-800 rounded-xl overflow-hidden bg-slate-950/50">
-              {group.members.map((memberEmail) => {
-                const isMemberAdmin =
-                  memberEmail.toLowerCase() === group.adminEmail.toLowerCase() ||
-                  memberEmail.toLowerCase() === "sngxworld@gmail.com";
-                const isMemberWhitelisted = (group.allowedChatMembers || [])
-                  .map((e) => e.toLowerCase())
-                  .includes(memberEmail.toLowerCase());
-                const canCurrentlyTalk = !group.adminOnlyChat || isMemberAdmin || isMemberWhitelisted;
+              {group.members
+                .filter((m) =>
+                  !memberSearchQuery.trim() ||
+                  m.toLowerCase().includes(memberSearchQuery.toLowerCase())
+                )
+                .map((memberEmail) => {
+                  const isMemberAdmin =
+                    memberEmail.toLowerCase() === group.adminEmail.toLowerCase() ||
+                    memberEmail.toLowerCase() === "sngxworld@gmail.com";
+                  const isMemberWhitelisted = (group.allowedChatMembers || [])
+                    .map((e) => e.toLowerCase())
+                    .includes(memberEmail.toLowerCase());
+                  const canCurrentlyTalk = !group.adminOnlyChat || isMemberAdmin || isMemberWhitelisted;
 
-                return (
-                  <div
-                    key={memberEmail}
-                    className="p-3.5 flex flex-wrap items-center justify-between gap-3 hover:bg-slate-900/50 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center font-mono font-bold text-xs text-indigo-300">
-                        {memberEmail.substring(0, 2).toUpperCase()}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-slate-200 font-mono">
-                            {memberEmail.split("@")[0]}
-                          </span>
-                          {isMemberAdmin && (
-                            <span className="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-[9px] font-mono font-bold">
-                              ADMIN
-                            </span>
-                          )}
-                          {isMemberWhitelisted && !isMemberAdmin && (
-                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[9px] font-mono font-bold flex items-center gap-1">
-                              <Sparkles className="w-2.5 h-2.5" /> AUTHORIZED TO CHAT
-                            </span>
-                          )}
+                  return (
+                    <div
+                      key={memberEmail}
+                      className="p-3.5 flex flex-wrap items-center justify-between gap-3 hover:bg-slate-900/50 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center font-mono font-bold text-xs text-indigo-300">
+                          {memberEmail.substring(0, 2).toUpperCase()}
                         </div>
-                        <span className="text-[11px] text-slate-500 font-mono block">
-                          {memberEmail}
-                        </span>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onOpenProfile({
+                                  email: memberEmail,
+                                  username: memberEmail.split("@")[0],
+                                  displayName: memberEmail.split("@")[0],
+                                })
+                              }
+                              className="text-xs font-bold text-slate-200 hover:text-indigo-400 font-mono text-left"
+                            >
+                              {memberEmail.split("@")[0]}
+                            </button>
+                            {isMemberAdmin && (
+                              <span className="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-[9px] font-mono font-bold">
+                                ADMIN
+                              </span>
+                            )}
+                            {isMemberWhitelisted && !isMemberAdmin && (
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[9px] font-mono font-bold flex items-center gap-1">
+                                <Sparkles className="w-2.5 h-2.5" /> AUTHORIZED TO CHAT
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[11px] text-slate-500 font-mono block">
+                            {memberEmail}
+                          </span>
+                        </div>
                       </div>
-                    </div>
 
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`text-[10px] font-mono px-2 py-0.5 rounded ${
-                          canCurrentlyTalk
-                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30"
-                            : "bg-slate-800 text-slate-500 border border-slate-700"
-                        }`}
-                      >
-                        {canCurrentlyTalk ? "Can Post Messages" : "Read-Only"}
-                      </span>
-
-                      {/* Admin Toggle Button for Individual Members */}
-                      {isAdmin && !isMemberAdmin && (
-                        <button
-                          type="button"
-                          onClick={() => handleToggleMemberPermission(memberEmail)}
-                          className={`px-3 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-1 transition-all ${
-                            isMemberWhitelisted
-                              ? "bg-rose-950/40 text-rose-300 border border-rose-800/60 hover:bg-rose-900/60"
-                              : "bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 hover:bg-indigo-600/50"
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`text-[10px] font-mono px-2 py-0.5 rounded ${
+                            canCurrentlyTalk
+                              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30"
+                              : "bg-slate-800 text-slate-500 border border-slate-700"
                           }`}
                         >
-                          {isMemberWhitelisted ? (
-                            <>
-                              <UserX className="w-3.5 h-3.5" /> Revoke Chat Access
-                            </>
-                          ) : (
-                            <>
-                              <UserCheck className="w-3.5 h-3.5" /> Grant Chat Access
-                            </>
-                          )}
-                        </button>
+                          {canCurrentlyTalk ? "Can Post Messages" : "Read-Only"}
+                        </span>
+
+                        {/* Admin Toggle Button for Individual Members */}
+                        {isAdmin && !isMemberAdmin && (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleMemberPermission(memberEmail)}
+                              className={`px-3 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-1 transition-all ${
+                                isMemberWhitelisted
+                                  ? "bg-rose-950/40 text-rose-300 border border-rose-800/60 hover:bg-rose-900/60"
+                                  : "bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 hover:bg-indigo-600/50"
+                              }`}
+                            >
+                              {isMemberWhitelisted ? (
+                                <>
+                                  <UserX className="w-3.5 h-3.5" /> Revoke Chat
+                                </>
+                              ) : (
+                                <>
+                                  <UserCheck className="w-3.5 h-3.5" /> Grant Chat
+                                </>
+                              )}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveMember(memberEmail)}
+                              className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-600 border border-rose-800/60 hover:border-rose-500 text-rose-300 hover:text-white transition-all shadow-sm flex items-center justify-center"
+                              title={`Remove ${memberEmail} from ${group.name}`}
+                            >
+                              <UserMinus className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODALS: ADD MEMBER, GROUP SETTINGS, VIP SETTINGS, ZOOM CHART, CREATE SIGNAL */}
+      {/* ========================================================================= */}
+
+      {/* Add Group Member Modal (Group Admin / Host Only) */}
+      {isAddMemberModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
+              <div className="flex items-center gap-2.5">
+                <UserPlus className="w-5 h-5 text-indigo-400" />
+                <div>
+                  <h3 className="text-sm font-bold text-slate-100 font-mono">
+                    Add Members to Signal Group
+                  </h3>
+                  <span className="text-[10px] text-indigo-400 font-mono font-semibold">
+                    (Group Admin Exclusive Control)
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setIsAddMemberModalOpen(false);
+                  setAddMemberError(null);
+                  setAddMemberSuccess(null);
+                }}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddMemberSubmit} className="p-5 space-y-4 font-mono">
+              {addMemberError && (
+                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs">
+                  {addMemberError}
+                </div>
+              )}
+              {addMemberSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>{addMemberSuccess}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                  Member Email or Username
+                </label>
+                <input
+                  type="text"
+                  value={newMemberInput}
+                  onChange={(e) => setNewMemberInput(e.target.value)}
+                  placeholder="e.g. trader@example.com or @trader"
+                  required
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 placeholder:text-slate-600 focus:border-indigo-500 focus:outline-none"
+                />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Enter registered trader's email or username to instantly grant group access.
+                </p>
+              </div>
+
+              {/* Toggle Chat Permission */}
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold text-slate-200 block">
+                    Grant Immediate Chat/Talk Permission
+                  </span>
+                  <span className="text-[10px] text-slate-500 block">
+                    Allow user to post messages even in Admin-Only mode
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setGrantNewMemberChat(!grantNewMemberChat)}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                    grantNewMemberChat
+                      ? "bg-indigo-600 text-white"
+                      : "bg-slate-800 text-slate-400"
+                  }`}
+                >
+                  {grantNewMemberChat ? "GRANTED" : "DEFAULT"}
+                </button>
+              </div>
+
+              {/* Share Invite Link Option */}
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <span className="text-xs font-bold text-slate-300 block">Group Invite Link</span>
+                  <span className="text-[10px] text-slate-500 block">Share on social media</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={copyInviteLink}
+                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-indigo-300 text-xs font-bold flex items-center gap-1.5 transition-colors"
+                >
+                  <Copy className="w-3 h-3" /> {copiedInvite ? "Copied!" : "Copy Link"}
+                </button>
+              </div>
+
+              <div className="flex gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddMemberModalOpen(false)}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-1.5"
+                >
+                  <UserPlus className="w-4 h-4" /> Add Member
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Group Settings Modal (Group Admin / Host Only) */}
+      {isGroupSettingsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+              <div className="flex items-center gap-2.5">
+                <Settings className="w-5 h-5 text-indigo-400" />
+                <div>
+                  <h3 className="text-sm font-bold text-slate-100 font-mono">
+                    Group Settings & Administration
+                  </h3>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    Admin Controls for {group.name}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setIsGroupSettingsOpen(false);
+                  setSettingsError(null);
+                  setSettingsSuccess(null);
+                }}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveGroupSettings} className="p-5 space-y-5 overflow-y-auto flex-1 font-mono">
+              {settingsError && (
+                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs">
+                  {settingsError}
+                </div>
+              )}
+              {settingsSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>{settingsSuccess}</span>
+                </div>
+              )}
+
+              {/* POINT 1: General Details */}
+              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                <div className="text-xs font-bold text-indigo-300 uppercase tracking-wider">
+                  Point 1: Strategy & Visual Identity
+                </div>
+                <div>
+                  <label className="block text-[11px] text-slate-300 mb-1">Group Name</label>
+                  <input
+                    type="text"
+                    value={editGroupName}
+                    onChange={(e) => setEditGroupName(e.target.value)}
+                    required
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-slate-300 mb-1">Strategy Description</label>
+                  <textarea
+                    rows={2}
+                    value={editGroupDesc}
+                    onChange={(e) => setEditGroupDesc(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none resize-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-slate-300 mb-1">Group Logo / Avatar</label>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 overflow-hidden flex items-center justify-center text-slate-300 font-bold text-xs">
+                      {editGroupLogo ? (
+                        <img src={editGroupLogo} alt="Logo" className="w-full h-full object-cover" />
+                      ) : (
+                        <span>{editGroupName.substring(0, 2).toUpperCase()}</span>
                       )}
                     </div>
+                    <input
+                      type="file"
+                      ref={settingsLogoInputRef}
+                      onChange={handleLogoUpload}
+                      accept="image/*"
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => settingsLogoInputRef.current?.click()}
+                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1.5 transition-colors"
+                    >
+                      <Upload className="w-3 h-3" /> Change Logo
+                    </button>
+                    {editGroupLogo && (
+                      <button
+                        type="button"
+                        onClick={() => setEditGroupLogo("")}
+                        className="text-[11px] text-rose-400 hover:underline"
+                      >
+                        Remove
+                      </button>
+                    )}
                   </div>
-                );
-              })}
-            </div>
+                </div>
+              </div>
+
+              {/* POINT 2: Members & Invitations */}
+              <div className="p-3.5 rounded-xl bg-slate-950 border border-indigo-500/30 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-indigo-300 uppercase tracking-wider">
+                    Point 2: Members & Invitations
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsGroupSettingsOpen(false);
+                      setIsAddMemberModalOpen(true);
+                    }}
+                    className="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[10px] uppercase tracking-wider flex items-center gap-1 shadow-md shadow-indigo-600/30 transition-all"
+                  >
+                    <UserPlus className="w-3 h-3" /> (+group members [only for group admin])
+                  </button>
+                </div>
+                <div className="text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>Current Group Size:</span>
+                  <span className="font-bold text-slate-200">{group.members.length} registered members</span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800 flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-slate-200 block">Hide Member List</span>
+                    <span className="text-[10px] text-slate-500 block">Keep participants private</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEditHideMembers(!editHideMembers)}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                      editHideMembers ? "bg-amber-600 text-white" : "bg-slate-800 text-slate-400"
+                    }`}
+                  >
+                    {editHideMembers ? "HIDDEN" : "PUBLIC"}
+                  </button>
+                </div>
+
+                {/* Manage Current Members in Settings */}
+                <div className="space-y-1.5 pt-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Manage Participants ({group.members.length}):
+                  </span>
+                  <div className="max-h-36 overflow-y-auto space-y-1 divide-y divide-slate-800/60 border border-slate-800 rounded-lg p-1.5 bg-slate-900/50">
+                    {group.members.map((m) => {
+                      const isOwnerOfGroup =
+                        m.toLowerCase() === group.adminEmail.toLowerCase() ||
+                        m.toLowerCase() === "sngxworld@gmail.com";
+                      return (
+                        <div
+                          key={m}
+                          className="pt-1 first:pt-0 flex items-center justify-between text-xs py-1 px-1.5"
+                        >
+                          <div className="flex items-center gap-2 overflow-hidden">
+                            <span className="truncate text-slate-300 font-mono text-[11px]">
+                              {m}
+                            </span>
+                            {isOwnerOfGroup && (
+                              <span className="text-[9px] px-1 py-0.2 rounded bg-indigo-500/20 text-indigo-300 font-bold">
+                                ADMIN
+                              </span>
+                            )}
+                          </div>
+                          {!isOwnerOfGroup && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsGroupSettingsOpen(false);
+                                handleRemoveMember(m);
+                              }}
+                              className="px-2 py-0.5 rounded bg-rose-950/40 hover:bg-rose-600 border border-rose-800/60 text-rose-300 hover:text-white text-[10px] font-bold transition-all flex items-center gap-1 shrink-0"
+                              title={`Remove ${m}`}
+                            >
+                              <UserMinus className="w-3 h-3" /> Remove
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* POINT 3: Communication Rules */}
+              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                <div className="text-xs font-bold text-indigo-300 uppercase tracking-wider">
+                  Point 3: Discussion & Talk Policy
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-slate-200 block">Admin-Only Talk Mode</span>
+                    <span className="text-[10px] text-slate-500 block">
+                      Prevent general noise and spam in the chat
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEditAdminOnlyChat(!editAdminOnlyChat)}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                      editAdminOnlyChat ? "bg-amber-600 text-white" : "bg-emerald-600 text-white"
+                    }`}
+                  >
+                    {editAdminOnlyChat ? "ADMIN-ONLY" : "OPEN TALK"}
+                  </button>
+                </div>
+              </div>
+
+              {/* POINT 4: VIP Monetization */}
+              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-bold text-amber-300 uppercase tracking-wider">
+                    Point 4: VIP Monetization Settings
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsGroupSettingsOpen(false);
+                      setIsVipModalOpen(true);
+                    }}
+                    className="px-3 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-[10px] font-bold"
+                  >
+                    Configure VIP Pricing
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  {group.isPaid ? `Active VIP Price: $${group.priceUsd}/month` : "Currently Free Community Group"}
+                </p>
+              </div>
+
+              <div className="flex gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsGroupSettingsOpen(false)}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-indigo-600/30 transition-all"
+                >
+                  Save Group Settings
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -1523,6 +2247,70 @@ export const SignalGroupDetailView: React.FC<SignalGroupDetailViewProps> = ({
                 alt="Zoomed Chart Analysis"
                 className="max-w-full max-h-full object-contain rounded-lg"
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remove Member Confirmation Modal */}
+      {memberToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in">
+          <div className="bg-slate-900 border border-rose-500/40 p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4 font-mono">
+            <div className="flex items-center gap-3 text-rose-400">
+              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30">
+                <UserMinus className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-bold text-white text-base">
+                  Remove Group Member?
+                </h3>
+                <p className="text-xs text-rose-300/80">
+                  {isAdmin ? "Administrator Authority" : "Group Moderation"}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Are you sure you want to remove <strong className="text-rose-300 bg-rose-950/50 px-2 py-0.5 rounded border border-rose-800/40">{memberToDelete}</strong> from <strong className="text-white">{group.name}</strong>?
+              </p>
+              <p className="text-[11px] text-slate-400">
+                This trader will lose access to trade signals, charts, and group discussions until re-added.
+              </p>
+            </div>
+
+            {removeMemberError && (
+              <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs">
+                {removeMemberError}
+              </div>
+            )}
+
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isRemovingMember}
+                onClick={() => {
+                  setMemberToDelete(null);
+                  setRemoveMemberError(null);
+                }}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-all disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isRemovingMember}
+                onClick={confirmRemoveMemberAction}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all shadow-lg shadow-rose-600/30 flex items-center justify-center gap-1.5 disabled:opacity-50 uppercase tracking-wider"
+              >
+                {isRemovingMember ? (
+                  <span>Removing...</span>
+                ) : (
+                  <>
+                    <UserMinus className="w-4 h-4" /> Remove Member
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

@@ -15,9 +15,22 @@ interface UserRecord {
   dob?: string;
   bio?: string;
   tradingPair?: string;
+  tradingMarket?: string;
   startingCapital?: string;
   role: "admin" | "client";
+  platformRole?:
+    | "owner"
+    | "sub_owner"
+    | "verified_signal_provider"
+    | "moderator"
+    | "signal_provider"
+    | "member"
+    | "pending_user";
   status: "pending" | "approved" | "rejected";
+  subOwnerExpiresAt?: string;
+  subOwnerAssignedAt?: string;
+  subOwnerDurationDays?: number;
+  subOwnerNote?: string;
   createdAt: string;
   lastLogin?: string;
   tradingData?: any;
@@ -30,6 +43,13 @@ interface DBStructure {
   preApprovedEmails: string[];
   registeredDevices?: Record<string, { email: string; registeredAt: string }>;
   logs: { timestamp: string; message: string; type: "info" | "access" | "warn" }[];
+  subOwnerRequests?: any[];
+  moderatorReports?: any[];
+  communitySignalGroups?: any[];
+  communityChatMessages?: any[];
+  communitySignals?: any[];
+  communityDirectMessages?: any[];
+  communityGroupChatMessages?: Record<string, any[]>;
 }
 
 const DB_FILE = process.env.VERCEL
@@ -87,23 +107,36 @@ function loadDB(): DBStructure {
 }
 
 function ensureDefaultAdmin(db: DBStructure) {
+  if (!db.subOwnerRequests) db.subOwnerRequests = [];
+  if (!db.moderatorReports) db.moderatorReports = [];
+
   const adminIndex = db.users.findIndex(
-    (u) => u.email.toLowerCase() === "sngxworld@gmail.com" || u.role === "admin"
+    (u) =>
+      u.email.toLowerCase() === "sngxworld@gmail.com" ||
+      u.username.toLowerCase() === "sngxadmin009" ||
+      u.role === "admin"
   );
   if (adminIndex === -1) {
     db.users.unshift({
       id: "usr_admin_master",
       email: "sngxworld@gmail.com",
-      username: "sngxadmin",
-      password: "adminpassword123",
+      username: "SNGxADMIN009",
+      password: "sngzzz009abcd123@#",
+      displayName: "SNGx MASTER OWNER",
       role: "admin",
+      platformRole: "owner",
       status: "approved",
       createdAt: new Date().toISOString(),
     });
   } else {
-    // Ensure admin is always approved
+    // Ensure admin is always approved with owner platformRole
     db.users[adminIndex].role = "admin";
+    db.users[adminIndex].platformRole = "owner";
     db.users[adminIndex].status = "approved";
+    // Also support SNGxADMIN009 credentials
+    if (!db.users[adminIndex].username || db.users[adminIndex].username.toLowerCase() === "sngxadmin") {
+      db.users[adminIndex].username = "SNGxADMIN009";
+    }
   }
 
   if (!db.preApprovedEmails) db.preApprovedEmails = [];
@@ -232,7 +265,7 @@ app.use((req, res, next) => {
     currentDb.registeredDevices[deviceId] = {
       email: cleanEmail,
       registeredAt: registeredAt || new Date().toISOString(),
-      ...(isMasterDevice || cleanEmail === "sngxworld@gmail.com" ? { isMasterDevice: true } : {}),
+      ...(isMasterDevice ? { isMasterDevice: true } : {}),
     } as any;
     saveDB(currentDb);
     return res.json({ success: true });
@@ -259,10 +292,10 @@ app.use((req, res, next) => {
     }
 
     // Check device registration limit: 1 registration per device unless it is a master host device
-    const isMaster = isMasterDevice || cleanEmail === "sngxworld@gmail.com";
+    const isMaster = isMasterDevice;
     if (deviceId && !isMaster) {
       const existingDev = currentDb.registeredDevices[deviceId] as any;
-      if (existingDev && !existingDev.isMasterDevice && existingDev.email && existingDev.email.toLowerCase() !== cleanEmail && existingDev.email.toLowerCase() !== "sngxworld@gmail.com") {
+      if (existingDev && !existingDev.isMasterDevice && existingDev.email && existingDev.email.toLowerCase() !== cleanEmail) {
         return res.status(400).json({
           error: `Registration Limit: This device is already linked to account (${existingDev.email}). Only 1 account registration is allowed per device.`,
         });
@@ -524,7 +557,111 @@ app.use((req, res, next) => {
     });
   });
 
-  // ADMIN: Get all users & pre-approved list
+  // ADMIN: Dedicated Admin & Sub-Owner Portal Login Authentication
+  app.post("/api/admin/login", (req, res) => {
+    const { username, identifier, password, roleType } = req.body;
+    const cleanId = (username || identifier || "").trim().toLowerCase();
+    const cleanPass = (password || "").trim();
+
+    if (!cleanId || !cleanPass) {
+      return res.status(400).json({ error: "Username and password are required." });
+    }
+
+    const currentDb = getDB();
+
+    // 1. Owner Login Check
+    const isOwnerUser =
+      cleanId === "sngxadmin009" ||
+      cleanId === "sngxworld@gmail.com" ||
+      cleanId === "sngxadmin";
+
+    const isOwnerPass =
+      cleanPass === "sngzzz009abcd123@#" ||
+      cleanPass === "adminpassword123";
+
+    if (isOwnerUser && isOwnerPass) {
+      logActivity("👑 OWNER authenticated via Admin Portal (SNGxADMIN009)", "access");
+      return res.json({
+        success: true,
+        role: "owner",
+        user: {
+          id: "usr_admin_master",
+          email: "sngxworld@gmail.com",
+          username: "SNGxADMIN009",
+          displayName: "SNGx MASTER OWNER",
+          role: "admin",
+          platformRole: "owner",
+          status: "approved",
+          isOwner: true,
+        },
+      });
+    }
+
+    // 2. Sub-Owner Login Check
+    const matchedUser = currentDb.users.find(
+      (u) =>
+        (u.username && u.username.toLowerCase() === cleanId) ||
+        (u.email && u.email.toLowerCase() === cleanId)
+    );
+
+    if (!matchedUser) {
+      return res.status(401).json({ error: "Invalid username or password." });
+    }
+
+    if (matchedUser.password !== cleanPass) {
+      return res.status(401).json({ error: "Invalid username or password." });
+    }
+
+    // If roleType is specifically requested as owner but user is not owner
+    if (roleType === "owner" && !isOwnerUser) {
+      return res.status(403).json({ error: "Access Denied: You do not have Owner privileges." });
+    }
+
+    // Check if user has sub_owner platformRole or admin role
+    const isSubOwner = matchedUser.platformRole === "sub_owner" || matchedUser.role === "admin";
+
+    if (!isSubOwner) {
+      return res.status(403).json({
+        error: "Access Denied: This account is not authorized as an Owner or Sub-Owner.",
+      });
+    }
+
+    // Check Sub-Owner time limit expiration
+    if (matchedUser.platformRole === "sub_owner" && matchedUser.subOwnerExpiresAt) {
+      const expiry = new Date(matchedUser.subOwnerExpiresAt).getTime();
+      if (!isNaN(expiry) && Date.now() > expiry) {
+        logActivity(`Sub-Owner login blocked (Expired): ${matchedUser.email}`, "warn");
+        return res.status(403).json({
+          error: "Sub-Owner Authorization Expired. Your temporary ownership access period has ended. Please contact the Owner (@SNGxADMIN009).",
+          expired: true,
+        });
+      }
+    }
+
+    logActivity(`🎖️ Sub-Owner logged in: ${matchedUser.email} (${matchedUser.username})`, "access");
+
+    return res.json({
+      success: true,
+      role: "sub_owner",
+      user: {
+        id: matchedUser.id,
+        email: matchedUser.email,
+        username: matchedUser.username,
+        displayName: matchedUser.displayName || matchedUser.username,
+        photoURL: matchedUser.photoURL || "",
+        role: matchedUser.role,
+        platformRole: "sub_owner",
+        status: matchedUser.status,
+        subOwnerExpiresAt: matchedUser.subOwnerExpiresAt,
+        subOwnerDurationDays: matchedUser.subOwnerDurationDays,
+        subOwnerAssignedAt: matchedUser.subOwnerAssignedAt,
+        subOwnerNote: matchedUser.subOwnerNote,
+        isOwner: false,
+      },
+    });
+  });
+
+  // ADMIN: Get all users, subowner requests, mod reports & stats
   app.get("/api/admin/users", (_req, res) => {
     const currentDb = getDB();
 
@@ -533,19 +670,37 @@ app.use((req, res, next) => {
         id: u.id,
         email: u.email,
         username: u.username,
+        displayName: u.displayName || u.username,
+        photoURL: u.photoURL || "",
+        phone: u.phone || "",
+        dob: u.dob || "",
+        bio: u.bio || "",
+        tradingPair: u.tradingPair || "BTC/USDT",
+        tradingMarket: u.tradingMarket || "Crypto Market",
+        startingCapital: u.startingCapital || "",
         role: u.role,
+        platformRole: u.platformRole || (u.role === "admin" ? "owner" : u.status === "approved" ? "member" : "pending_user"),
         status: u.status,
+        subOwnerExpiresAt: u.subOwnerExpiresAt,
+        subOwnerAssignedAt: u.subOwnerAssignedAt,
+        subOwnerDurationDays: u.subOwnerDurationDays,
+        subOwnerNote: u.subOwnerNote,
         createdAt: u.createdAt,
         lastLogin: u.lastLogin,
         hasData: !!u.tradingData,
       })),
-      preApprovedEmails: currentDb.preApprovedEmails,
-      logs: currentDb.logs.slice(0, 50),
+      preApprovedEmails: currentDb.preApprovedEmails || [],
+      subOwnerRequests: currentDb.subOwnerRequests || [],
+      moderatorReports: currentDb.moderatorReports || [],
+      logs: currentDb.logs ? currentDb.logs.slice(0, 60) : [],
       stats: {
         totalUsers: currentDb.users.length,
         approvedUsers: currentDb.users.filter((u) => u.status === "approved").length,
         pendingUsers: currentDb.users.filter((u) => u.status === "pending").length,
         rejectedUsers: currentDb.users.filter((u) => u.status === "rejected").length,
+        subOwnersCount: currentDb.users.filter((u) => u.platformRole === "sub_owner").length,
+        pendingSubOwnerRequests: (currentDb.subOwnerRequests || []).filter((r: any) => r.status === "pending").length,
+        openReportsCount: (currentDb.moderatorReports || []).filter((m: any) => m.status === "open").length,
       },
     });
   });
@@ -702,36 +857,439 @@ app.use((req, res, next) => {
     });
   });
 
-  // ADMIN: Change User Role (promote to admin / demote to client)
-  app.post("/api/admin/update-role", (req, res) => {
-    const { userId, email, role } = req.body;
+  // ADMIN: Change Platform Role (Owner, Sub-Owner, Verified Signal Provider, Moderator, Signal Provider, Member, Pending User)
+  app.post("/api/admin/update-platform-role", (req, res) => {
+    const {
+      userId,
+      email,
+      platformRole,
+      subOwnerDurationDays,
+      subOwnerExpiresAt,
+      subOwnerNote,
+    } = req.body;
 
-    if ((!userId && !email) || !["admin", "client"].includes(role)) {
-      return res.status(400).json({ error: "Invalid parameters specified." });
+    const validRoles = [
+      "owner",
+      "sub_owner",
+      "verified_signal_provider",
+      "moderator",
+      "signal_provider",
+      "member",
+      "pending_user",
+    ];
+
+    if (!validRoles.includes(platformRole)) {
+      return res.status(400).json({ error: "Invalid platform role specified." });
     }
 
     const currentDb = getDB();
     const targetUser = currentDb.users.find(
-      (u) => u.id === userId || (email && u.email.trim().toLowerCase() === email.trim().toLowerCase())
+      (u) =>
+        u.id === userId ||
+        (email && u.email.trim().toLowerCase() === email.trim().toLowerCase())
     );
+
     if (!targetUser) {
-      return res.status(404).json({ error: "Client account not found." });
+      return res.status(404).json({ error: "User account not found." });
     }
 
-    if (targetUser.email.toLowerCase() === "sngxworld@gmail.com") {
-      return res.status(400).json({ error: "Master Admin role cannot be changed." });
+    if (
+      targetUser.email.toLowerCase() === "sngxworld@gmail.com" ||
+      targetUser.username?.toLowerCase() === "sngxadmin009"
+    ) {
+      return res.status(400).json({ error: "Owner account role cannot be changed." });
     }
 
-    targetUser.role = role;
-    if (role === "admin") targetUser.status = "approved";
+    targetUser.platformRole = platformRole;
+
+    if (platformRole === "sub_owner") {
+      targetUser.subOwnerAssignedAt = new Date().toISOString();
+      targetUser.subOwnerDurationDays = subOwnerDurationDays ? Number(subOwnerDurationDays) : 7;
+      targetUser.subOwnerNote = subOwnerNote || "Designated Sub-Owner with delegated management rights";
+
+      if (subOwnerExpiresAt) {
+        targetUser.subOwnerExpiresAt = subOwnerExpiresAt;
+      } else {
+        const days = targetUser.subOwnerDurationDays || 7;
+        targetUser.subOwnerExpiresAt = new Date(
+          Date.now() + days * 24 * 60 * 60 * 1000
+        ).toISOString();
+      }
+      targetUser.status = "approved";
+    } else {
+      // Clear sub-owner fields if changed to another role
+      delete targetUser.subOwnerExpiresAt;
+      delete targetUser.subOwnerDurationDays;
+      delete targetUser.subOwnerAssignedAt;
+      delete targetUser.subOwnerNote;
+
+      if (platformRole === "pending_user") {
+        targetUser.status = "pending";
+      } else {
+        targetUser.status = "approved";
+      }
+    }
 
     saveDB(currentDb);
-    logActivity(`Admin changed role for ${targetUser.email} to ${role.toUpperCase()}`, "access");
+    logActivity(
+      `Role for ${targetUser.email} (${targetUser.username}) updated to: ${platformRole.toUpperCase()}`,
+      "access"
+    );
 
     return res.json({
       success: true,
-      message: `Role for ${targetUser.email} updated to ${role}.`,
+      message: `Role for ${targetUser.email} updated to ${platformRole.toUpperCase()}.`,
+      user: {
+        id: targetUser.id,
+        email: targetUser.email,
+        username: targetUser.username,
+        platformRole: targetUser.platformRole,
+        status: targetUser.status,
+        subOwnerExpiresAt: targetUser.subOwnerExpiresAt,
+        subOwnerDurationDays: targetUser.subOwnerDurationDays,
+      },
     });
+  });
+
+  // ADMIN: Designate Sub-Owner with Time Limit / Expiry
+  app.post("/api/admin/set-subowner", (req, res) => {
+    const { email, username, durationDays, expiresAt, note } = req.body;
+    const cleanEmail = (email || "").trim().toLowerCase();
+    const cleanUsername = (username || "").trim().toLowerCase();
+
+    const currentDb = getDB();
+    const targetUser = currentDb.users.find(
+      (u) =>
+        (cleanEmail && u.email.toLowerCase() === cleanEmail) ||
+        (cleanUsername && u.username.toLowerCase() === cleanUsername)
+    );
+
+    if (!targetUser) {
+      return res.status(404).json({ error: "User account not found." });
+    }
+
+    if (
+      targetUser.email.toLowerCase() === "sngxworld@gmail.com" ||
+      targetUser.username?.toLowerCase() === "sngxadmin009"
+    ) {
+      return res.status(400).json({ error: "Cannot modify Owner master credentials." });
+    }
+
+    const days = durationDays ? Number(durationDays) : 7;
+    const expiryTimestamp = expiresAt
+      ? new Date(expiresAt).toISOString()
+      : new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+
+    targetUser.platformRole = "sub_owner";
+    targetUser.status = "approved";
+    targetUser.subOwnerAssignedAt = new Date().toISOString();
+    targetUser.subOwnerDurationDays = days;
+    targetUser.subOwnerExpiresAt = expiryTimestamp;
+    targetUser.subOwnerNote = note || "Sub-Owner with temporary delegated privileges";
+
+    saveDB(currentDb);
+    logActivity(
+      `👑 Owner designated Sub-Owner: ${targetUser.email} (${targetUser.username}) for ${days} days (Expires: ${expiryTimestamp})`,
+      "access"
+    );
+
+    return res.json({
+      success: true,
+      message: `User ${targetUser.email} has been designated as Sub-Owner for ${days} days.`,
+      user: {
+        id: targetUser.id,
+        email: targetUser.email,
+        username: targetUser.username,
+        platformRole: targetUser.platformRole,
+        subOwnerExpiresAt: targetUser.subOwnerExpiresAt,
+        subOwnerDurationDays: targetUser.subOwnerDurationDays,
+      },
+    });
+  });
+
+  // ADMIN: Revoke Sub-Owner status
+  app.post("/api/admin/revoke-subowner", (req, res) => {
+    const { email, username } = req.body;
+    const cleanEmail = (email || "").trim().toLowerCase();
+    const cleanUsername = (username || "").trim().toLowerCase();
+
+    const currentDb = getDB();
+    const targetUser = currentDb.users.find(
+      (u) =>
+        (cleanEmail && u.email.toLowerCase() === cleanEmail) ||
+        (cleanUsername && u.username.toLowerCase() === cleanUsername)
+    );
+
+    if (!targetUser) {
+      return res.status(404).json({ error: "User account not found." });
+    }
+
+    targetUser.platformRole = "member";
+    delete targetUser.subOwnerExpiresAt;
+    delete targetUser.subOwnerDurationDays;
+    delete targetUser.subOwnerAssignedAt;
+    delete targetUser.subOwnerNote;
+
+    saveDB(currentDb);
+    logActivity(`Sub-Owner status revoked for: ${targetUser.email}`, "warn");
+
+    return res.json({
+      success: true,
+      message: `Sub-Owner privileges revoked for ${targetUser.email}. Demoted to Member.`,
+    });
+  });
+
+  // SUB-OWNER: Get Sub-Owner Requests list
+  app.get("/api/admin/subowner-requests", (_req, res) => {
+    const currentDb = getDB();
+    if (!currentDb.subOwnerRequests) currentDb.subOwnerRequests = [];
+    return res.json({
+      success: true,
+      requests: currentDb.subOwnerRequests,
+    });
+  });
+
+  // SUB-OWNER: Create an Approval Request for the Owner
+  app.post("/api/admin/subowner-requests/create", (req, res) => {
+    const {
+      subOwnerEmail,
+      subOwnerUsername,
+      subOwnerDisplayName,
+      actionType,
+      targetEmail,
+      targetUsername,
+      targetId,
+      title,
+      description,
+      payload,
+      subOwnerNote,
+    } = req.body;
+
+    if (!subOwnerEmail || !actionType || !title) {
+      return res.status(400).json({ error: "Sub-Owner email, actionType, and title are required." });
+    }
+
+    const currentDb = getDB();
+    if (!currentDb.subOwnerRequests) currentDb.subOwnerRequests = [];
+
+    const newRequest = {
+      id: "req_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7),
+      subOwnerEmail: subOwnerEmail.trim().toLowerCase(),
+      subOwnerUsername: subOwnerUsername || subOwnerEmail.split("@")[0],
+      subOwnerDisplayName: subOwnerDisplayName || subOwnerUsername || subOwnerEmail.split("@")[0],
+      actionType,
+      targetEmail: targetEmail ? targetEmail.trim().toLowerCase() : undefined,
+      targetUsername: targetUsername || undefined,
+      targetId: targetId || undefined,
+      title,
+      description: description || "",
+      payload: payload || {},
+      status: "pending",
+      subOwnerNote: subOwnerNote || "",
+      createdAt: new Date().toISOString(),
+    };
+
+    currentDb.subOwnerRequests.unshift(newRequest);
+    saveDB(currentDb);
+    logActivity(
+      `📥 Sub-Owner Request Created by ${newRequest.subOwnerUsername}: "${newRequest.title}"`,
+      "info"
+    );
+
+    return res.json({
+      success: true,
+      message: "Approval request sent to Owner (@SNGxADMIN009). Awaiting Owner review.",
+      request: newRequest,
+    });
+  });
+
+  // OWNER: Approve & Execute a Sub-Owner Request
+  app.post("/api/admin/subowner-requests/approve", (req, res) => {
+    const { requestId, ownerResponseNote } = req.body;
+    if (!requestId) {
+      return res.status(400).json({ error: "Request ID is required." });
+    }
+
+    const currentDb = getDB();
+    if (!currentDb.subOwnerRequests) currentDb.subOwnerRequests = [];
+
+    const request = currentDb.subOwnerRequests.find((r: any) => r.id === requestId);
+    if (!request) {
+      return res.status(404).json({ error: "Sub-Owner request not found." });
+    }
+
+    // Execute the underlying action requested by the Sub-Owner automatically!
+    try {
+      if (request.actionType === "approve_user" && request.targetEmail) {
+        const clean = request.targetEmail.toLowerCase();
+        const user = currentDb.users.find((u) => u.email.toLowerCase() === clean);
+        if (user) user.status = "approved";
+        if (!currentDb.preApprovedEmails.includes(clean)) {
+          currentDb.preApprovedEmails.push(clean);
+        }
+      } else if (request.actionType === "reject_user" && request.targetEmail) {
+        const clean = request.targetEmail.toLowerCase();
+        const user = currentDb.users.find((u) => u.email.toLowerCase() === clean);
+        if (user && user.role !== "admin") user.status = "rejected";
+      } else if (request.actionType === "change_role" && request.targetEmail && request.payload?.platformRole) {
+        const clean = request.targetEmail.toLowerCase();
+        const user = currentDb.users.find((u) => u.email.toLowerCase() === clean);
+        if (user && user.role !== "admin") {
+          user.platformRole = request.payload.platformRole;
+          if (request.payload.platformRole === "pending_user") {
+            user.status = "pending";
+          } else {
+            user.status = "approved";
+          }
+        }
+      } else if (request.actionType === "add_gmail" && request.payload?.email) {
+        const clean = request.payload.email.toLowerCase();
+        if (!currentDb.preApprovedEmails.includes(clean)) {
+          currentDb.preApprovedEmails.push(clean);
+        }
+        currentDb.users.forEach((u) => {
+          if (u.email.toLowerCase() === clean) u.status = "approved";
+        });
+      } else if (request.actionType === "delete_user" && request.targetEmail) {
+        const clean = request.targetEmail.toLowerCase();
+        const idx = currentDb.users.findIndex((u) => u.email.toLowerCase() === clean);
+        if (idx !== -1 && currentDb.users[idx].role !== "admin") {
+          currentDb.users.splice(idx, 1);
+          currentDb.preApprovedEmails = currentDb.preApprovedEmails.filter((e) => e.toLowerCase() !== clean);
+        }
+      } else if (request.actionType === "delete_group" && request.payload?.groupId) {
+        if (currentDb.communitySignalGroups) {
+          currentDb.communitySignalGroups = currentDb.communitySignalGroups.filter(
+            (g: any) => g.id !== request.payload.groupId
+          );
+        }
+      }
+    } catch (execErr) {
+      console.warn("Sub-owner request action execution warning:", execErr);
+    }
+
+    request.status = "approved";
+    request.reviewedAt = new Date().toISOString();
+    request.reviewedBy = "SNGxADMIN009 (Owner)";
+    request.ownerResponseNote = ownerResponseNote || "Approved and executed by Owner.";
+
+    saveDB(currentDb);
+    logActivity(`✅ Owner APPROVED Sub-Owner request: ${request.title}`, "access");
+
+    return res.json({
+      success: true,
+      message: `Request "${request.title}" approved and executed successfully!`,
+      request,
+    });
+  });
+
+  // OWNER: Reject a Sub-Owner Request
+  app.post("/api/admin/subowner-requests/reject", (req, res) => {
+    const { requestId, ownerResponseNote } = req.body;
+    if (!requestId) {
+      return res.status(400).json({ error: "Request ID is required." });
+    }
+
+    const currentDb = getDB();
+    if (!currentDb.subOwnerRequests) currentDb.subOwnerRequests = [];
+
+    const request = currentDb.subOwnerRequests.find((r: any) => r.id === requestId);
+    if (!request) {
+      return res.status(404).json({ error: "Sub-Owner request not found." });
+    }
+
+    request.status = "rejected";
+    request.reviewedAt = new Date().toISOString();
+    request.reviewedBy = "SNGxADMIN009 (Owner)";
+    request.ownerResponseNote = ownerResponseNote || "Request rejected by Owner.";
+
+    saveDB(currentDb);
+    logActivity(`❌ Owner REJECTED Sub-Owner request: ${request.title}`, "warn");
+
+    return res.json({
+      success: true,
+      message: `Request "${request.title}" rejected.`,
+      request,
+    });
+  });
+
+  // MODERATOR & BUGS: Get Moderator / Bug reports
+  app.get("/api/admin/moderator-reports", (_req, res) => {
+    const currentDb = getDB();
+    if (!currentDb.moderatorReports) currentDb.moderatorReports = [];
+    return res.json({
+      success: true,
+      reports: currentDb.moderatorReports,
+    });
+  });
+
+  // MODERATOR & BUGS: Submit a bug or issue report
+  app.post("/api/admin/moderator-reports/create", (req, res) => {
+    const {
+      reportedByEmail,
+      reportedByUsername,
+      reportedByDisplayName,
+      category,
+      subject,
+      message,
+    } = req.body;
+
+    if (!reportedByEmail || !subject || !message) {
+      return res.status(400).json({ error: "Email, subject, and message are required." });
+    }
+
+    const currentDb = getDB();
+    if (!currentDb.moderatorReports) currentDb.moderatorReports = [];
+
+    const newReport = {
+      id: "rep_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7),
+      reportedByEmail: reportedByEmail.trim().toLowerCase(),
+      reportedByUsername: reportedByUsername || reportedByEmail.split("@")[0],
+      reportedByDisplayName: reportedByDisplayName || reportedByUsername || reportedByEmail.split("@")[0],
+      category: category || "bug",
+      subject,
+      message,
+      status: "open",
+      createdAt: new Date().toISOString(),
+    };
+
+    currentDb.moderatorReports.unshift(newReport);
+    saveDB(currentDb);
+    logActivity(
+      `🛡️ Moderator / Bug Report filed by ${newReport.reportedByUsername}: "${newReport.subject}"`,
+      "info"
+    );
+
+    return res.json({
+      success: true,
+      message: "Report sent to Moderators & Owner.",
+      report: newReport,
+    });
+  });
+
+  // MODERATOR & BUGS: Update report status
+  app.post("/api/admin/moderator-reports/resolve", (req, res) => {
+    const { reportId, status, handledBy, adminNotes } = req.body;
+    if (!reportId) {
+      return res.status(400).json({ error: "Report ID is required." });
+    }
+
+    const currentDb = getDB();
+    if (!currentDb.moderatorReports) currentDb.moderatorReports = [];
+
+    const rep = currentDb.moderatorReports.find((r: any) => r.id === reportId);
+    if (!rep) {
+      return res.status(404).json({ error: "Report not found." });
+    }
+
+    rep.status = status || "resolved";
+    rep.handledBy = handledBy || "Moderator / Owner";
+    if (adminNotes) rep.adminNotes = adminNotes;
+
+    saveDB(currentDb);
+    logActivity(`Report ${reportId} updated to ${rep.status}`, "info");
+
+    return res.json({ success: true, report: rep });
   });
 
   // ADMIN: Get full details and trading plan store for a user
@@ -894,7 +1452,7 @@ app.use((req, res, next) => {
     return res.json({ success: true, messages: msgs });
   });
 
-  // Group Chat: POST message for a signal group (enforces admin-only talk rules)
+  // Group Chat: POST message for a signal group (enforces admin-only talk rules & 20-year server vault persistence)
   app.post("/api/community/signal-groups/:groupId/chat", (req, res) => {
     const { groupId } = req.params;
     const msg = req.body;
@@ -906,16 +1464,69 @@ app.use((req, res, next) => {
       communityGroupChatMessages[groupId] = [];
     }
 
-    communityGroupChatMessages[groupId].push(msg);
-    return res.json({ success: true, message: msg });
+    // 20-Year Server History Vault Storage
+    const messageWithVault = {
+      ...msg,
+      id: msg.id || "gmsg_" + Math.random().toString(36).substring(2, 9),
+      vaultArchivedAt: new Date().toISOString(),
+      vaultRetention: "20_YEARS",
+    };
+
+    communityGroupChatMessages[groupId].push(messageWithVault);
+
+    const currentDb = getDB();
+    if (!currentDb.communityGroupChatMessages) {
+      currentDb.communityGroupChatMessages = {};
+    }
+    currentDb.communityGroupChatMessages[groupId] = communityGroupChatMessages[groupId];
+    saveDB(currentDb);
+
+    return res.json({ success: true, message: messageWithVault });
   });
 
-  // Chat Room: GET All Messages (Filters out messages older than 4 months per Slide 14)
+  // Group Chat: GET Lifetime Permanent History for a Signal Group
+  app.get("/api/community/signal-groups/:groupId/history", (req, res) => {
+    const { groupId } = req.params;
+    const currentDb = getDB();
+    const msgs = communityGroupChatMessages[groupId] || currentDb.communityGroupChatMessages?.[groupId] || [];
+    
+    return res.json({
+      success: true,
+      groupId,
+      retentionPolicy: "PERMANENT_LIFETIME_SERVER_VAULT",
+      totalMessages: msgs.length,
+      messages: msgs,
+    });
+  });
+
+  // Lifetime Server Archive Vault Status
+  app.get("/api/community/vault/status", (_req, res) => {
+    const currentDb = getDB();
+    const groups = communitySignalGroups.length > 0 ? communitySignalGroups : (currentDb.communitySignalGroups || []);
+    let totalVaultMsgs = 0;
+    const groupChats = currentDb.communityGroupChatMessages || communityGroupChatMessages || {};
+    Object.keys(groupChats).forEach((gId) => {
+      totalVaultMsgs += (groupChats[gId] || []).length;
+    });
+
+    return res.json({
+      success: true,
+      vault: {
+        status: "ONLINE",
+        architecture: "Permanent Lifetime Server Vault",
+        retentionPolicy: "Permanent Lifetime (No Expiration / No Auto-Deletion)",
+        maxActiveGroupsPerUser: 1,
+        totalActiveSignalGroups: groups.length,
+        totalArchivedGroupMessages: totalVaultMsgs,
+        totalPublicChatMessages: communityChatMessages.length,
+        syncedAt: new Date().toISOString(),
+      },
+    });
+  });
+
+  // Chat Room: GET All Messages (Permanent Lifetime Archive - No expiration or auto-deletion)
   app.get("/api/community/chat/messages", (_req, res) => {
-    const FOUR_MONTHS_MS = 120 * 24 * 60 * 60 * 1000;
-    const cutoff = Date.now() - FOUR_MONTHS_MS;
-    const valid = communityChatMessages.filter((m) => new Date(m.createdAt).getTime() > cutoff);
-    return res.json({ success: true, messages: valid });
+    return res.json({ success: true, messages: communityChatMessages });
   });
 
   // Chat Room: POST Message
@@ -941,16 +1552,174 @@ app.use((req, res, next) => {
     return res.json({ success: true, message: newMessage });
   });
 
-  // Signal Groups: GET All Groups
-  app.get("/api/community/signal-groups", (_req, res) => {
-    return res.json({ success: true, groups: communitySignalGroups });
+  // Signal Groups: Sync All Groups
+  app.post("/api/community/signal-groups/sync", (req, res) => {
+    const { groups } = req.body;
+    if (Array.isArray(groups)) {
+      communitySignalGroups = groups;
+      const currentDb = getDB();
+      currentDb.communitySignalGroups = groups;
+      saveDB(currentDb);
+    }
+    return res.json({ success: true, count: communitySignalGroups.length });
   });
 
-  // Signal Groups: POST Create Group (Enforces USD price cap ≤ $17 per User Directive)
+  // HOST ADMIN: Global Community Overview
+  app.get("/api/admin/community/overview", (_req, res) => {
+    const currentDb = getDB();
+    const groups = communitySignalGroups.length > 0 ? communitySignalGroups : (currentDb.communitySignalGroups || []);
+    const publicChat = communityChatMessages.length > 0 ? communityChatMessages : (currentDb.communityChatMessages || []);
+    const dms = communityDirectMessages.length > 0 ? communityDirectMessages : (currentDb.communityDirectMessages || []);
+    
+    return res.json({
+      success: true,
+      data: {
+        totalGroups: groups.length,
+        totalPublicMessages: publicChat.length,
+        totalDirectMessages: dms.length,
+        groups,
+        publicChat,
+        dms,
+        groupChats: communityGroupChatMessages,
+      },
+    });
+  });
+
+  // HOST ADMIN / USER: Delete Signal Group (Frees up user slot to create new group)
+  app.post("/api/admin/community/delete-group", (req, res) => {
+    const { groupId, adminEmail } = req.body;
+    const currentDb = getDB();
+    const groups = communitySignalGroups.length > 0 ? communitySignalGroups : (currentDb.communitySignalGroups || []);
+    const targetGroup = groups.find((g: any) => g.id === groupId);
+
+    const isHost = (adminEmail || "").toLowerCase() === "sngxworld@gmail.com";
+    const isOwner = targetGroup && (targetGroup.adminEmail || "").toLowerCase() === (adminEmail || "").toLowerCase();
+
+    if (!isHost && !isOwner) {
+      return res.status(403).json({ error: "Unauthorized. Only the group creator or Host Admin can delete this group." });
+    }
+
+    communitySignalGroups = communitySignalGroups.filter((g) => g.id !== groupId);
+    delete communityGroupChatMessages[groupId];
+    if (currentDb.communitySignalGroups) {
+      currentDb.communitySignalGroups = currentDb.communitySignalGroups.filter((g: any) => g.id !== groupId);
+    }
+    if (currentDb.communityGroupChatMessages) {
+      delete currentDb.communityGroupChatMessages[groupId];
+    }
+    saveDB(currentDb);
+    logActivity(`Signal group ID ${groupId} deleted by ${adminEmail}. Slot freed.`, "warn");
+    return res.json({ success: true, message: `Group ${groupId} deleted successfully.` });
+  });
+
+  // Signal Groups: DELETE Endpoint by ID
+  app.delete("/api/community/signal-groups/:groupId", (req, res) => {
+    const { groupId } = req.params;
+    const userEmail = (req.query.userEmail as string || "").toLowerCase();
+
+    const currentDb = getDB();
+    const groups = communitySignalGroups.length > 0 ? communitySignalGroups : (currentDb.communitySignalGroups || []);
+    const targetGroup = groups.find((g: any) => g.id === groupId);
+
+    if (!targetGroup) {
+      return res.status(404).json({ error: "Signal group not found." });
+    }
+
+    const isHost = userEmail === "sngxworld@gmail.com";
+    const isOwner = (targetGroup.adminEmail || "").toLowerCase() === userEmail;
+
+    if (!isHost && !isOwner) {
+      return res.status(403).json({ error: "Unauthorized. You can only delete your own signal group." });
+    }
+
+    communitySignalGroups = communitySignalGroups.filter((g) => g.id !== groupId);
+    delete communityGroupChatMessages[groupId];
+    if (currentDb.communitySignalGroups) {
+      currentDb.communitySignalGroups = currentDb.communitySignalGroups.filter((g: any) => g.id !== groupId);
+    }
+    if (currentDb.communityGroupChatMessages) {
+      delete currentDb.communityGroupChatMessages[groupId];
+    }
+    saveDB(currentDb);
+    return res.json({ success: true, message: "Signal group deleted. 1-group slot is now reset." });
+  });
+
+  // HOST ADMIN / USER: Delete Inappropriate or User Chat Message
+  app.post("/api/admin/community/delete-message", (req, res) => {
+    const { messageId, groupId, adminEmail } = req.body;
+    const isHost = (adminEmail || "").toLowerCase() === "sngxworld@gmail.com";
+    if (!isHost) {
+      return res.status(403).json({ error: "Unauthorized. Host Admin credentials required." });
+    }
+
+    if (groupId && communityGroupChatMessages[groupId]) {
+      communityGroupChatMessages[groupId] = communityGroupChatMessages[groupId].filter((m) => m.id !== messageId);
+    } else {
+      communityChatMessages = communityChatMessages.filter((m) => m.id !== messageId);
+    }
+    return res.json({ success: true, message: "Message removed by Host Admin." });
+  });
+
+  // DELETE Public Chat Message by ID
+  app.delete("/api/community/chat/messages/:messageId", (req, res) => {
+    const { messageId } = req.params;
+    const { deleterEmail } = req.body || {};
+    communityChatMessages = communityChatMessages.filter((m) => m.id !== messageId);
+    const currentDb = getDB();
+    if (currentDb.communityChatMessages) {
+      currentDb.communityChatMessages = currentDb.communityChatMessages.filter((m: any) => m.id !== messageId);
+      saveDB(currentDb);
+    }
+    return res.json({ success: true, message: "Message deleted successfully." });
+  });
+
+  // DELETE Direct Message by ID
+  app.delete("/api/community/direct-messages/:messageId", (req, res) => {
+    const { messageId } = req.params;
+    communityDirectMessages = communityDirectMessages.filter((m) => m.id !== messageId);
+    const currentDb = getDB();
+    if (currentDb.communityDirectMessages) {
+      currentDb.communityDirectMessages = currentDb.communityDirectMessages.filter((m: any) => m.id !== messageId);
+      saveDB(currentDb);
+    }
+    return res.json({ success: true, message: "Direct message deleted successfully." });
+  });
+
+  // DELETE Group Chat Message by ID
+  app.delete("/api/community/signal-groups/:groupId/chat/:messageId", (req, res) => {
+    const { groupId, messageId } = req.params;
+    if (communityGroupChatMessages[groupId]) {
+      communityGroupChatMessages[groupId] = communityGroupChatMessages[groupId].filter((m) => m.id !== messageId);
+    }
+    const currentDb = getDB();
+    if (currentDb.communityGroupChatMessages?.[groupId]) {
+      currentDb.communityGroupChatMessages[groupId] = currentDb.communityGroupChatMessages[groupId].filter((m: any) => m.id !== messageId);
+      saveDB(currentDb);
+    }
+    return res.json({ success: true, message: "Group message deleted successfully." });
+  });
+
+  // Signal Groups: POST Create Group (Enforces 1 Group per User Limit & USD price cap ≤ $17)
   app.post("/api/community/signal-groups", (req, res) => {
     const { name, description, logoUrl, priceUsd, isVerified, admin } = req.body;
     if (!name || !admin) {
       return res.status(400).json({ error: "Group name and admin profile are required." });
+    }
+
+    const adminEmail = (admin.email || "").trim().toLowerCase();
+    const isHost = adminEmail === "sngxworld@gmail.com";
+
+    // Enforce 1 Active Signal Group per User Rule
+    const existingGroup = communitySignalGroups.find(
+      (g) => (g.adminEmail || "").toLowerCase() === adminEmail || (g.adminUsername || "").toLowerCase() === (admin.username || "").toLowerCase()
+    );
+
+    if (!isHost && existingGroup) {
+      return res.status(400).json({
+        error: `Limit Reached: Each trader can only create up to 1 signal group at a time. You must delete your existing group '${existingGroup.name}' first before creating a new one.`,
+        existingGroupId: existingGroup.id,
+        existingGroupName: existingGroup.name,
+      });
     }
 
     const cappedPrice = Math.min(Math.max(0, Number(priceUsd) || 0), 17);
@@ -975,6 +1744,13 @@ app.use((req, res, next) => {
     };
 
     communitySignalGroups.push(newGroup);
+    const currentDb = getDB();
+    if (!currentDb.communitySignalGroups) {
+      currentDb.communitySignalGroups = [];
+    }
+    currentDb.communitySignalGroups.push(newGroup);
+    saveDB(currentDb);
+
     return res.json({ success: true, group: newGroup });
   });
 

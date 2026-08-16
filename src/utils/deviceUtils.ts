@@ -38,31 +38,15 @@ function generateBrowserFingerprint(): string {
   }
 }
 
+export const HOST_MASTER_KEY = "2009sng123@#";
+
 /**
  * Check if the current device has Host Master Device status (unlimited registrations allowed)
+ * Unlocked exclusively via the Master Key (2009sng123@#)
  */
 export function isHostMasterDevice(): boolean {
   try {
     if (localStorage.getItem(DEVICE_IS_MASTER_KEY) === "true") return true;
-
-    const registeredEmail = localStorage.getItem(DEVICE_REG_EMAIL_KEY);
-    if (registeredEmail && registeredEmail.trim().toLowerCase() === "sngxworld@gmail.com") {
-      localStorage.setItem(DEVICE_IS_MASTER_KEY, "true");
-      return true;
-    }
-
-    const activeUserRaw = localStorage.getItem("tradeplan_active_user");
-    if (activeUserRaw) {
-      const activeUser = JSON.parse(activeUserRaw);
-      if (
-        activeUser?.email?.trim().toLowerCase() === "sngxworld@gmail.com" ||
-        activeUser?.role === "admin" ||
-        activeUser?.platformRole === "host_admin"
-      ) {
-        localStorage.setItem(DEVICE_IS_MASTER_KEY, "true");
-        return true;
-      }
-    }
   } catch {}
   return false;
 }
@@ -142,7 +126,7 @@ export async function recordDeviceRegistration(email: string, registeredAt?: str
   const cleanEmail = email.trim().toLowerCase();
   const deviceId = getDeviceId();
   const regTimestamp = registeredAt || new Date().toISOString();
-  const isMaster = cleanEmail === "sngxworld@gmail.com" || isHostMasterDevice();
+  const isMaster = isHostMasterDevice();
 
   if (isMaster) {
     setHostMasterDevice(true);
@@ -196,17 +180,16 @@ export async function recordDeviceRegistration(email: string, registeredAt?: str
 
 /**
  * Verify if device is permitted to register with attemptEmail.
- * Strictly blocks multiple registrations on client devices, but grants UNLIMITED registrations for Host Master Devices.
+ * Strictly blocks multiple registrations on client devices, but grants UNLIMITED registrations for Host Master Devices (unlocked with key 2009sng123@#).
  */
 export async function verifyDeviceRegistrationPermission(
   attemptEmail: string
 ): Promise<{ allowed: boolean; registeredEmail?: string; reason?: string; isMasterDevice?: boolean }> {
   const cleanAttempt = (attemptEmail || "").trim().toLowerCase();
-  const isMasterAdmin = cleanAttempt === "sngxworld@gmail.com";
   const isMasterDev = isHostMasterDevice();
 
-  // Host Master Device or Host Admin email has UNLIMITED registration support
-  if (isMasterAdmin || isMasterDev) {
+  // Host Master Device (unlocked with Master Key 2009sng123@#) has UNLIMITED registration support
+  if (isMasterDev) {
     setHostMasterDevice(true);
     return { allowed: true, isMasterDevice: true };
   }
@@ -220,7 +203,7 @@ export async function verifyDeviceRegistrationPermission(
       return {
         allowed: false,
         registeredEmail: localReg.registeredEmail,
-        reason: `Registration Limit: This device has already registered account (${localReg.registeredEmail}). Only 1 registration is allowed per device. Please log in or complete payment.`,
+        reason: `Registration Limit: This device has already registered account (${localReg.registeredEmail}). Only 1 registration is allowed per device. Please log in or unlock device with Master Key.`,
       };
     }
   }
@@ -235,7 +218,7 @@ export async function verifyDeviceRegistrationPermission(
         return { allowed: true, isMasterDevice: true };
       }
       const boundEmail = (data?.email || "").trim().toLowerCase();
-      if (boundEmail && boundEmail !== cleanAttempt && boundEmail !== "sngxworld@gmail.com") {
+      if (boundEmail && boundEmail !== cleanAttempt) {
         // Cache locally for faster next rejection
         try {
           localStorage.setItem(DEVICE_REG_EMAIL_KEY, boundEmail);
@@ -263,10 +246,8 @@ export async function verifyDeviceRegistrationPermission(
  */
 export function checkIsTrialExpired(user?: Partial<UserProfile> | null): boolean {
   if (!user) return false;
-  const emailLower = (user.email || "").toLowerCase();
-  // Master admin, Host Master Device, or approved accounts never expire
+  // Admin role, approved accounts, or Host Master Device never expire
   if (
-    emailLower === "sngxworld@gmail.com" ||
     user.role === "admin" ||
     user.status === "approved" ||
     isHostMasterDevice()

@@ -71,6 +71,7 @@ export default function App() {
 
     let newStatus = matchedLocal?.status;
     let newRole = matchedLocal?.role;
+    let newPlatformRole = matchedLocal?.platformRole;
 
     const preApprovedList: string[] = JSON.parse(localStorage.getItem("sngx_preapproved_emails") || "[]");
     if (cleanEmail === "sngxworld@gmail.com" || preApprovedList.some((e: string) => e.toLowerCase() === cleanEmail)) {
@@ -85,27 +86,45 @@ export default function App() {
         if (data.status) {
           newStatus = data.status;
           if (data.role) newRole = data.role;
+          if (data.platformRole) newPlatformRole = data.platformRole;
         }
       }
     } catch (err) {
       console.warn("Server status refresh notice:", err);
     }
 
-    if (newStatus && (newStatus !== currentUser.status || (newRole && newRole !== currentUser.role))) {
+    if (
+      newStatus &&
+      (newStatus !== currentUser.status ||
+        (newRole && newRole !== currentUser.role) ||
+        (newPlatformRole && newPlatformRole !== currentUser.platformRole))
+    ) {
       setCurrentUser((prev) =>
-        prev ? { ...prev, status: newStatus, role: newRole || prev.role } : null
+        prev
+          ? {
+              ...prev,
+              status: newStatus,
+              role: newRole || prev.role,
+              platformRole: newPlatformRole || prev.platformRole,
+            }
+          : null
       );
     }
   };
 
   // Calculate 5-Day Trial Status (strict device & user account check)
-  const isApprovedUser = currentUser?.status === "approved" || currentUser?.role === "admin" || currentUser?.email?.toLowerCase() === "sngxworld@gmail.com";
+  const isApprovedUser =
+    currentUser?.status === "approved" ||
+    currentUser?.role === "admin" ||
+    currentUser?.platformRole === "owner" ||
+    currentUser?.platformRole === "sub_owner" ||
+    currentUser?.email?.toLowerCase() === "sngxworld@gmail.com";
   const isTrialExpired = !isApprovedUser && checkIsTrialExpired(currentUser);
 
-  // Auto-poll approval status every 3 seconds if user is awaiting host admin approval
+  // Auto-poll approval status every 4 seconds if user is awaiting host admin approval
   useEffect(() => {
     if (!currentUser || isApprovedUser) return;
-    const interval = setInterval(handleRefreshStatus, 3000);
+    const interval = setInterval(handleRefreshStatus, 4000);
     return () => clearInterval(interval);
   }, [currentUser?.email, currentUser?.status, isApprovedUser]);
 
@@ -121,7 +140,9 @@ export default function App() {
   if (!currentUser) {
     return (
       <GatewayScreen
-        onLoginSuccess={(user) => setCurrentUser(user)}
+        onLoginSuccess={(user) => {
+          setCurrentUser(user);
+        }}
         onRegisteredPending={(user) => setCurrentUser(user)}
       />
     );

@@ -50,24 +50,18 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
   // Host Admin Master Device PIN / Code verification
   const handleUnlockMasterDevice = (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanPin = adminUnlockPin.trim().toLowerCase();
-    if (
-      cleanPin === "sngxworld@gmail.com" ||
-      cleanPin === "94752840841" ||
-      cleanPin === "+94752840841" ||
-      cleanPin === "sngxadmin" ||
-      cleanPin === "sngx2026"
-    ) {
+    const cleanPin = adminUnlockPin.trim();
+    if (cleanPin === "2009sng123@#") {
       setHostMasterDevice(true);
       setDeviceInfo(getLocalDeviceRegistration());
-      setAdminUnlockMsg("✅ Success! This device is now marked as a Host Master Device with unlimited registrations.");
+      setAdminUnlockMsg("✅ Master Key Verified! This device is now marked as a Master Device with unlimited account registrations.");
       setTimeout(() => {
         setShowAdminUnlockModal(false);
         setAdminUnlockMsg(null);
         setAdminUnlockPin("");
       }, 1200);
     } else {
-      setAdminUnlockMsg("❌ Invalid Host Admin PIN or Email key.");
+      setAdminUnlockMsg("❌ Invalid Master Key. Please enter the valid key.");
     }
   };
 
@@ -816,22 +810,22 @@ export const GatewayScreen: React.FC<GatewayScreenProps> = ({
           <div className="bg-slate-900 border border-amber-500/40 p-6 rounded-2xl max-w-sm w-full shadow-2xl relative">
             <div className="flex items-center gap-2.5 mb-3 text-amber-400">
               <Unlock className="w-5 h-5" />
-              <h3 className="font-bold text-white text-base font-mono">Host Device Master Unlock</h3>
+              <h3 className="font-bold text-white text-base font-mono">Master Device Key Unlock</h3>
             </div>
             <p className="text-xs text-slate-300 mb-4 leading-relaxed">
-              Authenticate this device as the Host Admin terminal to enable unlimited account registrations, test client setups, and unlimited device permissions.
+              Enter the Master Key to unlock unlimited device registrations, setup client devices, and remove device limits on this terminal.
             </p>
 
             <form onSubmit={handleUnlockMasterDevice} className="space-y-3">
               <div>
                 <label className="block text-[11px] font-mono text-slate-400 mb-1">
-                  Host Admin Email or Master Key
+                  Master Key (for unlimited device registration)
                 </label>
                 <input
-                  type="text"
+                  type="password"
                   value={adminUnlockPin}
                   onChange={(e) => setAdminUnlockPin(e.target.value)}
-                  placeholder="e.g. sngxworld@gmail.com or Phone"
+                  placeholder="Enter Master Key"
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-amber-500 font-mono"
                   autoFocus
                   required

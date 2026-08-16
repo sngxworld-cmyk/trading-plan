@@ -24,7 +24,12 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
   const [phone, setPhone] = useState(user.phone || "");
   const [dob, setDob] = useState(user.dob || "");
   const [bio, setBio] = useState(user.bio || "");
-  const [tradingPair, setTradingPair] = useState(user.tradingPair || "BTC/USDT");
+  const [tradingMarket, setTradingMarket] = useState(
+    user.tradingMarket ||
+    (["Crypto Market", "Forex Market", "Futures Market", "Stock Market"].includes(user.tradingPair || "")
+      ? user.tradingPair!
+      : "Crypto Market")
+  );
   const [startingCapital, setStartingCapital] = useState(user.startingCapital || "$25,000");
 
   const [saving, setSaving] = useState(false);
@@ -102,7 +107,8 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
         phone: phone.trim(),
         dob: dob.trim(),
         bio: bio.trim(),
-        tradingPair: tradingPair.trim(),
+        tradingMarket: tradingMarket,
+        tradingPair: tradingMarket,
         startingCapital: startingCapital.trim(),
       });
 
@@ -295,17 +301,25 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
 
             <div>
               <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 font-mono">
-                Primary Trading Pair
+                Trading Market
               </label>
               <div className="relative">
-                <Tag className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-3" />
-                <input
-                  type="text"
-                  value={tradingPair}
-                  onChange={(e) => setTradingPair(e.target.value)}
-                  placeholder="BTC/USDT, NQ Futures, EUR/USD"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-indigo-500 font-mono"
-                />
+                <Tag className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-3 pointer-events-none" />
+                <select
+                  value={tradingMarket}
+                  onChange={(e) => setTradingMarket(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-8 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-indigo-500 font-mono appearance-none cursor-pointer"
+                >
+                  <option value="Crypto Market">Crypto Market</option>
+                  <option value="Forex Market">Forex Market</option>
+                  <option value="Futures Market">Futures Market</option>
+                  <option value="Stock Market">Stock Market</option>
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400">
+                  <svg className="w-4 h-4 fill-current" viewBox="0 0 20 20">
+                    <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+                  </svg>
+                </div>
               </div>
             </div>
           </div>
